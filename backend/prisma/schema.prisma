@@ -1,0 +1,755 @@
+// Prisma schema for the multi-tenant inventory platform.
+// Every business table carries tenantId; every inventory-affecting table
+// also carries locationId. See CLAUDE.md for the full product spec.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  INVENTORY_MANAGER
+  STOREKEEPER
+  PURCHASING_OFFICER
+  AUDITOR
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  /// Platform-initiated block (abuse, non-payment escalation, etc.), distinct
+  /// from a tenant voluntarily canceling — set only via the platform-admin API.
+  SUSPENDED
+}
+
+enum InventoryMode {
+  SINGLE_LOCATION
+  MULTIPLE_LOCATIONS
+}
+
+enum LocationType {
+  MAIN_STORE
+  WAREHOUSE
+  STOREROOM
+  DEPOT
+  KITCHEN
+  PHARMACY
+  LAUNDRY
+  OTHER
+}
+
+enum LocationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  RETURN
+  DAMAGE
+  EXPIRED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  GOODS_RECEIVED
+  COMPLETED
+  CANCELED
+}
+
+enum AdjustmentReason {
+  DAMAGE
+  THEFT
+  COUNTING_ERROR
+  EXPIRED
+  FOUND_INVENTORY
+}
+
+enum TransferStatus {
+  PENDING
+  APPROVED
+  TRANSFERRED
+  RECEIVED
+  CANCELED
+}
+
+enum StockCountStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy, users & settings
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id                 String             @id @default(cuid())
+  businessName       String
+  logoUrl            String?
+  phone              String
+  email              String
+  address            String?
+  country            String
+  timeZone           String
+  subscriptionStatus SubscriptionStatus @default(TRIALING)
+  suspendedAt        DateTime?
+  suspendedReason    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  users            User[]
+  settings         BusinessSettings?
+  locations        Location[]
+  categories       Category[]
+  brands           Brand[]
+  suppliers        Supplier[]
+  products         Product[]
+  inventory        Inventory[]
+  stockMovements   StockMovement[]
+  purchaseOrders   PurchaseOrder[]
+  goodsReceipts    GoodsReceipt[]
+  stockAdjustments StockAdjustment[]
+  stockTransfers   StockTransfer[]
+  stockCounts      StockCount[]
+  activityLogs     ActivityLog[]
+  refreshTokens    RefreshToken[]
+  passwordResets   PasswordResetToken[]
+  priceHistory     ProductPriceHistory[]
+  pendingTwoFactorAuths PendingTwoFactorAuth[]
+  otpChallenges         OtpChallenge[]
+  rememberedDevices     RememberedDevice[]
+  twoFactorBackupCodes  TwoFactorBackupCode[]
+
+  @@map("tenants")
+}
+
+model BusinessSettings {
+  id                   String        @id @default(cuid())
+  tenantId             String        @unique
+  inventoryMode        InventoryMode @default(SINGLE_LOCATION)
+  enablePos            Boolean       @default(false)
+  enableBatchTracking  Boolean       @default(false)
+  enableExpiryTracking Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("business_settings")
+}
+
+model User {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  name                 String
+  email                String    @unique
+  passwordHash         String
+  role                 Role
+  isActive             Boolean   @default(true)
+  lastLoginAt          DateTime?
+  phone                String?
+  twoFactorEnabled     Boolean   @default(false)
+  twoFactorConfirmedAt DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens          RefreshToken[]
+  passwordResets         PasswordResetToken[]
+  pendingTwoFactorAuths  PendingTwoFactorAuth[]
+  otpChallenges          OtpChallenge[]
+  rememberedDevices      RememberedDevice[]
+  twoFactorBackupCodes   TwoFactorBackupCode[]
+  activityLogs           ActivityLog[]
+  stockMovements         StockMovement[]
+  stockAdjustments       StockAdjustment[]
+  createdPurchaseOrders  PurchaseOrder[]      @relation("PurchaseOrderCreatedBy")
+  approvedPurchaseOrders PurchaseOrder[]      @relation("PurchaseOrderApprovedBy")
+  goodsReceipts          GoodsReceipt[]
+  requestedTransfers     StockTransfer[]      @relation("StockTransferRequestedBy")
+  approvedTransfers      StockTransfer[]      @relation("StockTransferApprovedBy")
+  stockCounts            StockCount[]
+  productPriceChanges    ProductPriceHistory[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Two-factor authentication (SMS OTP)
+//
+// Mandatory for OWNER, optional (opt-in) for every other role. Two DB-backed
+// opaque-token models mirror RefreshToken/PasswordResetToken above rather
+// than introducing a new JWT type: PendingTwoFactorAuth is the bearer
+// credential for "you just passed the password check and are mid-2FA-flow"
+// (used as a Bearer token against the 2FA-only endpoints, same shape as a
+// normal access token from the client's point of view, but rejected by the
+// normal `authenticate` middleware); OtpChallenge is the actual code +
+// attempt counter checked against user input.
+// ---------------------------------------------------------------------------
+
+enum OtpPurpose {
+  LOGIN
+  SETUP
+}
+
+model PendingTwoFactorAuth {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("pending_two_factor_auth")
+}
+
+/// One row per SMS code sent, whether for a login challenge or for
+/// verifying a phone number during setup. `phone` is snapshotted per-row
+/// (not read from User) because a SETUP challenge's phone may differ from
+/// whatever's currently saved on the user.
+model OtpChallenge {
+  id        String     @id @default(cuid())
+  tenantId  String
+  userId    String
+  purpose   OtpPurpose
+  phone     String
+  codeHash  String
+  attempts  Int        @default(0)
+  expiresAt DateTime
+  createdAt DateTime   @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("otp_challenges")
+}
+
+/// A trusted browser/device: skips the OTP prompt on login while valid.
+/// expiresAt slides forward by 30 days on every successful skip, so a
+/// device used regularly is never re-prompted — only one that goes quiet
+/// for over 30 days needs to re-verify.
+model RememberedDevice {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("remembered_devices")
+}
+
+/// One-time recovery codes generated at 2FA setup, so a lost phone doesn't
+/// permanently lock a user (especially an OWNER, for whom 2FA can't just be
+/// turned back off) out of their own account.
+model TwoFactorBackupCode {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factor_backup_codes")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog: locations, categories, brands, suppliers, products
+// ---------------------------------------------------------------------------
+
+model Location {
+  id          String         @id @default(cuid())
+  tenantId    String
+  name        String
+  type        LocationType   @default(MAIN_STORE)
+  address     String?
+  description String?
+  status      LocationStatus @default(ACTIVE)
+  isDefault   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inventory        Inventory[]
+  stockMovements   StockMovement[]
+  purchaseOrders   PurchaseOrder[]
+  goodsReceipts    GoodsReceipt[]
+  stockAdjustments StockAdjustment[]
+  stockCounts      StockCount[]
+  transfersFrom    StockTransfer[]   @relation("StockTransferFromLocation")
+  transfersTo      StockTransfer[]   @relation("StockTransferToLocation")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("locations")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("categories")
+}
+
+model Brand {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("brands")
+}
+
+model Supplier {
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("suppliers")
+}
+
+model Product {
+  id           String        @id @default(cuid())
+  tenantId     String
+  categoryId   String?
+  brandId      String?
+  sku          String
+  barcode      String?
+  name         String
+  description  String?
+  unit         String
+  costPrice    Decimal       @db.Decimal(14, 2)
+  sellingPrice Decimal       @db.Decimal(14, 2)
+  minimumStock Int           @default(0)
+  imageUrl     String?
+  status       ProductStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category           Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  inventory          Inventory[]
+  stockMovements     StockMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
+  goodsReceiptItems  GoodsReceiptItem[]
+  stockAdjustments   StockAdjustment[]
+  stockTransferItems StockTransferItem[]
+  stockCountItems    StockCountItem[]
+  priceHistory       ProductPriceHistory[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@index([tenantId, barcode])
+  @@map("products")
+}
+
+/// One row per price change, capturing what the price *was* right before an
+/// update overwrites it — the current price always lives on Product itself,
+/// this is purely the trail of what it used to be, when, and who changed it.
+model ProductPriceHistory {
+  id           String   @id @default(cuid())
+  tenantId     String
+  productId    String
+  costPrice    Decimal  @db.Decimal(14, 2)
+  sellingPrice Decimal  @db.Decimal(14, 2)
+  changedById  String
+  createdAt    DateTime @default(now())
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  changedBy User    @relation(fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, productId])
+  @@map("product_price_history")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory & stock movements — the source of truth
+// ---------------------------------------------------------------------------
+
+model Inventory {
+  id               String   @id @default(cuid())
+  tenantId         String
+  productId        String
+  locationId       String
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, locationId])
+  @@index([tenantId])
+  @@index([tenantId, locationId])
+  @@map("inventory")
+}
+
+model StockMovement {
+  id             String       @id @default(cuid())
+  tenantId       String
+  productId      String
+  locationId     String
+  userId         String
+  type           MovementType
+  quantity       Int
+  beforeQuantity Int
+  afterQuantity  Int
+  reference      String?
+  notes          String?
+  createdAt      DateTime     @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([tenantId, locationId])
+  @@index([tenantId, productId])
+  @@index([tenantId, createdAt])
+  @@map("stock_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Purchasing & receiving
+// ---------------------------------------------------------------------------
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  tenantId     String
+  supplierId   String
+  locationId   String
+  orderNumber  String
+  status       PurchaseOrderStatus @default(DRAFT)
+  notes        String?
+  createdById  String
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier      Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  location      Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy     User                @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy    User?               @relation("PurchaseOrderApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  items         PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String  @id @default(cuid())
+  purchaseOrderId  String
+  productId        String
+  quantityOrdered  Int
+  quantityReceived Int     @default(0)
+  costPrice        Decimal @db.Decimal(14, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+model GoodsReceipt {
+  id              String   @id @default(cuid())
+  tenantId        String
+  purchaseOrderId String
+  locationId      String
+  receivedById    String
+  notes           String?
+  receivedAt      DateTime @default(now())
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  location      Location           @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  receivedBy    User               @relation(fields: [receivedById], references: [id], onDelete: Restrict)
+  items         GoodsReceiptItem[]
+
+  @@index([tenantId])
+  @@index([purchaseOrderId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id             String    @id @default(cuid())
+  goodsReceiptId String
+  productId      String
+  quantity       Int
+  costPrice      Decimal   @db.Decimal(14, 2)
+  batchNumber    String?
+  expiryDate     DateTime?
+
+  goodsReceipt GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([goodsReceiptId])
+  @@map("goods_receipt_items")
+}
+
+// ---------------------------------------------------------------------------
+// Adjustments, transfers & physical counts
+// ---------------------------------------------------------------------------
+
+model StockAdjustment {
+  id         String           @id @default(cuid())
+  tenantId   String
+  locationId String
+  productId  String
+  userId     String
+  quantity   Int
+  reason     AdjustmentReason
+  notes      String?
+  createdAt  DateTime         @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([tenantId, locationId])
+  @@map("stock_adjustments")
+}
+
+model StockTransfer {
+  id             String         @id @default(cuid())
+  tenantId       String
+  fromLocationId String
+  toLocationId   String
+  status         TransferStatus @default(PENDING)
+  requestedById  String
+  approvedById   String?
+  approvedAt     DateTime?
+  transferredAt  DateTime?
+  receivedAt     DateTime?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromLocation Location            @relation("StockTransferFromLocation", fields: [fromLocationId], references: [id], onDelete: Restrict)
+  toLocation   Location            @relation("StockTransferToLocation", fields: [toLocationId], references: [id], onDelete: Restrict)
+  requestedBy  User                @relation("StockTransferRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedBy   User?               @relation("StockTransferApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  items        StockTransferItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id              String @id @default(cuid())
+  stockTransferId String
+  productId       String
+  quantity        Int
+
+  stockTransfer StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([stockTransferId])
+  @@map("stock_transfer_items")
+}
+
+model StockCount {
+  id          String           @id @default(cuid())
+  tenantId    String
+  locationId  String
+  startedById String
+  status      StockCountStatus @default(DRAFT)
+  notes       String?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location  Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  startedBy User             @relation(fields: [startedById], references: [id], onDelete: Restrict)
+  items     StockCountItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, locationId])
+  @@map("stock_counts")
+}
+
+model StockCountItem {
+  id               String @id @default(cuid())
+  stockCountId     String
+  productId        String
+  systemQuantity   Int
+  physicalQuantity Int
+  difference       Int
+
+  stockCount StockCount @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([stockCountId])
+  @@map("stock_count_items")
+}
+
+// ---------------------------------------------------------------------------
+// Activity / audit trail
+// ---------------------------------------------------------------------------
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String?
+  action      String
+  description String
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("activity_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Platform administration — deliberately separate from Tenant/User.
+//
+// A PlatformAdmin oversees the whole SaaS (all tenants) and is a completely
+// distinct identity from any tenant's Owner. It has no tenantId and no
+// relation into tenant data. Its JWTs are signed with a different secret
+// (see lib/jwt.ts) so a tenant-scoped token can never be mistaken for a
+// platform token by any middleware, and vice versa.
+// ---------------------------------------------------------------------------
+
+model PlatformAdmin {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  refreshTokens PlatformAdminRefreshToken[]
+
+  @@map("platform_admins")
+}
+
+model PlatformAdminRefreshToken {
+  id              String    @id @default(cuid())
+  platformAdminId String
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  platformAdmin PlatformAdmin @relation(fields: [platformAdminId], references: [id], onDelete: Cascade)
+
+  @@index([platformAdminId])
+  @@map("platform_admin_refresh_tokens")
+}
