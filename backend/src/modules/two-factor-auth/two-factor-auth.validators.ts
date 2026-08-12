@@ -1,8 +1,22 @@
 import { z } from "zod";
+import { OtpChannel } from "../../generated/prisma/enums.ts";
 
-export const sendSetupCodeSchema = z.object({
-  phone: z.string().trim().min(7).max(20),
-});
+/**
+ * Where to send the setup code. SMS needs a phone number to verify; EMAIL
+ * doesn't take one — it always goes to the address already on the account,
+ * which is itself a login identifier, so letting a caller nominate an
+ * arbitrary address here would let them attach someone else's inbox as their
+ * second factor.
+ */
+export const sendSetupCodeSchema = z.discriminatedUnion("channel", [
+  z.object({
+    channel: z.literal(OtpChannel.SMS),
+    phone: z.string().trim().min(7).max(20),
+  }),
+  z.object({
+    channel: z.literal(OtpChannel.EMAIL),
+  }),
+]);
 
 export const confirmSetupSchema = z.object({
   code: z.string().trim().length(6),

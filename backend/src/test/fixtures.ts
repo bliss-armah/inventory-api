@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.ts";
 import { signAccessToken } from "../lib/jwt.ts";
+import { hashPassword } from "../lib/password.ts";
 import {
   Role,
   SubscriptionStatus,
@@ -13,6 +14,9 @@ import {
 // would just slow the suite down for no benefit.
 const DUMMY_PASSWORD_HASH =
   "$2b$12$yzTYF9/dHlYsg2qkFGZ1wO6Rfhq3u24J4GOtT/D5PJPieZn0I/i4S";
+
+/** The real, known plaintext behind createTenantWithRealPassword/createUserWithRealPassword. */
+export const TEST_PASSWORD = "TestPassword123!";
 
 // A random UUID rather than Date.now()-based uniqueness: timestamps only
 // carry millisecond resolution, so fast successive fixture calls (or two
@@ -49,6 +53,56 @@ export async function createTenantWithOwner(namePrefix = "Test Co") {
     role: user.role,
   });
   return { tenant, user, token };
+}
+
+/**
+ * Unlike createTenantWithOwner, this hashes a real known password so tests
+ * can exercise the actual /api/auth/login endpoint (needed for anything
+ * touching 2FA-gated login, since that logic lives in login() itself, not
+ * something a directly-minted token can exercise).
+ */
+export async function createTenantWithOwnerAndPassword(namePrefix = "Test Co") {
+  const passwordHash = await hashPassword(TEST_PASSWORD);
+  const tenant = await prisma.tenant.create({
+    data: {
+      businessName: unique(namePrefix),
+      phone: "+10000000000",
+      email: `${unique("owner")}@example.test`,
+      country: "Testland",
+      timeZone: "UTC",
+      subscriptionStatus: SubscriptionStatus.TRIALING,
+    },
+  });
+
+  const user = await prisma.user.create({
+    data: {
+      tenantId: tenant.id,
+      name: "Test Owner",
+      email: `${unique("user")}@example.test`,
+      passwordHash,
+      role: Role.OWNER,
+    },
+  });
+
+  return { tenant, user };
+}
+
+export async function createUserWithPassword(
+  tenantId: string,
+  role: Role,
+  namePrefix = "Test User",
+) {
+  const passwordHash = await hashPassword(TEST_PASSWORD);
+  const user = await prisma.user.create({
+    data: {
+      tenantId,
+      name: namePrefix,
+      email: `${unique("user")}@example.test`,
+      passwordHash,
+      role,
+    },
+  });
+  return user;
 }
 
 export function createLocation(tenantId: string, name = "Main") {

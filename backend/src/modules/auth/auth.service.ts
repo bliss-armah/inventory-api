@@ -7,6 +7,7 @@ import {
   verifyPasswordTimingSafeNoop,
 } from "../../lib/password.ts";
 import { generateOpaqueToken, hashOpaqueToken } from "../../lib/tokens.ts";
+import { classifyIdentifier } from "../../lib/identifier.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import {
   BadRequestError,
@@ -29,6 +30,13 @@ import type {
   AuthenticatedUser,
   LoginOutcome,
 } from "./auth.types.ts";
+
+/**
+ * One message for every failure mode of a login attempt — unknown identifier,
+ * malformed identifier, deactivated account, wrong password. Naming which one
+ * it was would turn the login endpoint into an account-enumeration oracle.
+ */
+const INVALID_CREDENTIALS = "Invalid credentials";
 
 function toAuthenticatedUser(user: {
   id: string;
@@ -122,9 +130,11 @@ export async function register(input: RegisterInput): Promise<LoginOutcome> {
     id: owner.id,
     tenantId: owner.tenantId,
     role: owner.role,
+    email: owner.email,
     phone: null,
     twoFactorEnabled: false,
     twoFactorConfirmedAt: null,
+    twoFactorChannel: null,
   });
   return { status: "setup_required", mfaToken };
 }
@@ -134,17 +144,23 @@ export async function login(
   ipAddress?: string,
   rememberDeviceToken?: string,
 ): Promise<LoginOutcome> {
-  const user = await authRepository.findUserByEmail(input.email);
+  const identifier = classifyIdentifier(input.identifier);
+  const user = identifier
+    ? await authRepository.findUserByIdentifier(identifier)
+    : null;
+
   if (!user || !user.isActive) {
     // Still run a bcrypt compare so this branch takes as long as a real
-    // mismatch — otherwise the timing difference reveals which emails exist.
+    // mismatch — otherwise the timing difference reveals which identifiers
+    // exist. Also covers a malformed identifier, so "not an email or phone"
+    // is indistinguishable from "no such account".
     await verifyPasswordTimingSafeNoop(input.password);
-    throw new UnauthorizedError("Invalid email or password");
+    throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
 
   const validPassword = await verifyPassword(input.password, user.passwordHash);
   if (!validPassword) {
-    throw new UnauthorizedError("Invalid email or password");
+    throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
 
   // Only revealed after credentials check out — a suspended tenant's email

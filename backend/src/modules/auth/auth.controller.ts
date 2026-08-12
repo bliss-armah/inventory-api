@@ -62,7 +62,16 @@ export async function login(req: Request, res: Response) {
     });
     return;
   }
-  ok(res, { status: result.status, mfaToken: result.mfaToken });
+  ok(
+    res,
+    result.status === "otp_required"
+      ? {
+          status: result.status,
+          mfaToken: result.mfaToken,
+          channel: result.channel,
+        }
+      : { status: result.status, mfaToken: result.mfaToken },
+  );
 }
 
 export async function refresh(req: Request, res: Response) {
@@ -107,7 +116,9 @@ export async function me(req: Request, res: Response) {
     name: user.name,
     email: user.email,
     role: user.role,
+    phone: user.phone,
     twoFactorEnabled: user.twoFactorEnabled,
+    twoFactorChannel: user.twoFactorChannel,
     twoFactorRequired: user.role === Role.OWNER,
   });
 }
@@ -148,14 +159,18 @@ export async function verifyTwoFactor(req: Request, res: Response) {
   });
 }
 
-/** Sends a code to verify a phone number, for both forced and opt-in setup. */
+/**
+ * Sends a code to verify a second-factor destination, for both forced and
+ * opt-in setup. An EMAIL setup needs the account's own address, so the user is
+ * loaded here rather than trusting anything in the request body.
+ */
 export async function sendTwoFactorSetupCode(req: Request, res: Response) {
-  const { phone } = sendSetupCodeSchema.parse(req.body);
-  await twoFactorAuthService.sendSetupCode(
-    req.auth!.tenantId,
-    req.auth!.userId,
-    phone,
-  );
+  const input = sendSetupCodeSchema.parse(req.body);
+  const user = await authRepository.findUserById(req.auth!.userId);
+  if (!user) {
+    throw new UnauthorizedError();
+  }
+  await twoFactorAuthService.sendSetupCode(user, input);
   ok(res, null, "Verification code sent");
 }
 

@@ -7,10 +7,15 @@ import {
   generateBackupCodes,
   normalizeBackupCode,
 } from "../../lib/otp.ts";
-import { sendSms } from "../../lib/sms.ts";
+import { deliverOtp } from "../../lib/otp-delivery.ts";
+import { normalizePhone } from "../../lib/phone.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
-import { BadRequestError, UnauthorizedError } from "../../shared/errors.ts";
-import { Role, OtpPurpose } from "../../generated/prisma/enums.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  UnauthorizedError,
+} from "../../shared/errors.ts";
+import { Role, OtpPurpose, OtpChannel } from "../../generated/prisma/enums.ts";
 import * as twoFactorAuthRepository from "./two-factor-auth.repository.ts";
 
 const MAX_OTP_ATTEMPTS = 5;
@@ -19,10 +24,24 @@ export type TwoFactorUser = {
   id: string;
   tenantId: string;
   role: Role;
+  email: string;
   phone: string | null;
   twoFactorEnabled: boolean;
   twoFactorConfirmedAt: Date | null;
+  twoFactorChannel: OtpChannel | null;
 };
+
+/**
+ * The destination a confirmed second factor points at. EMAIL always resolves
+ * to the account's own address rather than a stored copy, so a change of email
+ * can't leave codes going to the old one.
+ */
+function confirmedDestination(user: TwoFactorUser): string | null {
+  if (!user.twoFactorConfirmedAt) return null;
+  if (user.twoFactorChannel === OtpChannel.EMAIL) return user.email;
+  if (user.twoFactorChannel === OtpChannel.SMS) return user.phone;
+  return null;
+}
 
 /** OWNER can't opt out — every other role is opt-in via twoFactorEnabled. */
 export function requiresTwoFactor(
@@ -34,37 +53,44 @@ export function requiresTwoFactor(
 async function sendOtpChallenge(
   tenantId: string,
   userId: string,
-  phone: string,
+  channel: OtpChannel,
+  destination: string,
   purpose: OtpPurpose,
 ) {
   const code = generateOtpCode();
-  const expiresAt = new Date(
-    Date.now() + ms(env.OTP_CODE_TTL as ms.StringValue),
-  );
+  const ttl = ms(env.OTP_CODE_TTL as ms.StringValue);
+  const expiresAt = new Date(Date.now() + ttl);
   await twoFactorAuthRepository.replaceActiveChallenge({
     tenantId,
     userId,
     purpose,
-    phone,
+    channel,
+    destination,
     codeHash: hashOpaqueToken(code),
     expiresAt,
   });
-  await sendSms(
-    phone,
-    `Your Inventory Manager verification code is ${code}. It expires in 10 minutes.`,
-  );
+  await deliverOtp({
+    channel,
+    destination,
+    code,
+    minutes: Math.round(ttl / 60_000),
+  });
 }
 
 /**
  * Called right after a password check succeeds for a user who needs 2FA
  * and has no valid remembered device. Issues the short-lived bearer token
  * for the rest of the flow, and — if the user already has a confirmed
- * phone — sends the login code immediately, so the client never has to
+ * channel — sends the login code immediately, so the client never has to
  * make a separate "please send me a code" call for the common case.
+ *
+ * `channel` comes back with `otp_required` so the client can tell the user
+ * where to look without having to guess.
  */
-export async function beginTwoFactorFlow(
-  user: TwoFactorUser,
-): Promise<{ status: "otp_required" | "setup_required"; mfaToken: string }> {
+export async function beginTwoFactorFlow(user: TwoFactorUser): Promise<
+  | { status: "otp_required"; mfaToken: string; channel: OtpChannel }
+  | { status: "setup_required"; mfaToken: string }
+> {
   const mfaToken = generateOpaqueToken();
   const expiresAt = new Date(
     Date.now() + ms(env.PENDING_TWO_FACTOR_AUTH_TTL as ms.StringValue),
@@ -76,14 +102,20 @@ export async function beginTwoFactorFlow(
     expiresAt,
   });
 
-  if (user.twoFactorConfirmedAt && user.phone) {
+  const destination = confirmedDestination(user);
+  if (destination && user.twoFactorChannel) {
     await sendOtpChallenge(
       user.tenantId,
       user.id,
-      user.phone,
+      user.twoFactorChannel,
+      destination,
       OtpPurpose.LOGIN,
     );
-    return { status: "otp_required", mfaToken };
+    return {
+      status: "otp_required",
+      mfaToken,
+      channel: user.twoFactorChannel,
+    };
   }
 
   return { status: "setup_required", mfaToken };
@@ -123,12 +155,45 @@ export async function createRememberedDevice(tenantId: string, userId: string) {
   return token;
 }
 
+/**
+ * Sends the code that verifies a destination during setup. For SMS the phone
+ * is claimed here rather than at confirm time: it's a unique login identifier,
+ * so a number already attached to another account has to be rejected up front
+ * instead of surfacing as a constraint violation after the user has already
+ * received and typed a code.
+ */
 export async function sendSetupCode(
-  tenantId: string,
-  userId: string,
-  phone: string,
+  user: { id: string; tenantId: string; email: string },
+  input:
+    | { channel: typeof OtpChannel.SMS; phone: string }
+    | { channel: typeof OtpChannel.EMAIL },
 ) {
-  await sendOtpChallenge(tenantId, userId, phone, OtpPurpose.SETUP);
+  if (input.channel === OtpChannel.EMAIL) {
+    await sendOtpChallenge(
+      user.tenantId,
+      user.id,
+      OtpChannel.EMAIL,
+      user.email,
+      OtpPurpose.SETUP,
+    );
+    return;
+  }
+
+  const phone = normalizePhone(input.phone);
+  const owner = await twoFactorAuthRepository.findUserIdByPhone(phone);
+  if (owner && owner.id !== user.id) {
+    throw new ConflictError("That phone number is already in use", {
+      phone: ["That phone number is already in use"],
+    });
+  }
+
+  await sendOtpChallenge(
+    user.tenantId,
+    user.id,
+    OtpChannel.SMS,
+    phone,
+    OtpPurpose.SETUP,
+  );
 }
 
 /**
@@ -175,11 +240,13 @@ export async function confirmSetup(
   const backupCodes = generateBackupCodes();
 
   await prisma.$transaction(async (tx) => {
-    await twoFactorAuthRepository.confirmTwoFactorSetupTx(
-      tx,
-      userId,
-      challenge.phone,
-    );
+    await twoFactorAuthRepository.confirmTwoFactorSetupTx(tx, userId, {
+      channel: challenge.channel,
+      // Only an SMS setup establishes a phone number. An email setup must not
+      // touch it — the address it verified is already on the account.
+      phone:
+        challenge.channel === OtpChannel.SMS ? challenge.destination : undefined,
+    });
     await twoFactorAuthRepository.createBackupCodesTx(
       tx,
       tenantId,

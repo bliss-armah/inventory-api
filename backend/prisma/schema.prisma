@@ -170,9 +170,15 @@ model User {
   role                 Role
   isActive             Boolean   @default(true)
   lastLoginAt          DateTime?
-  phone                String?
+  // Unique because it's a login identifier in its own right, not just a
+  // contact detail — findUserByIdentifier resolves one account from it, the
+  // same way email does. Nullable: Postgres permits many NULLs in a unique
+  // index, so accounts that never add a phone are unaffected.
+  phone                String?   @unique
   twoFactorEnabled     Boolean   @default(false)
   twoFactorConfirmedAt DateTime?
+  // Where login OTPs go once setup is confirmed. Null until then.
+  twoFactorChannel     OtpChannel?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -248,6 +254,13 @@ enum OtpPurpose {
   SETUP
 }
 
+/// How a one-time code reaches the user. EMAIL goes out via Brevo, SMS via
+/// Vynfy — see lib/otp-delivery.ts.
+enum OtpChannel {
+  EMAIL
+  SMS
+}
+
 model PendingTwoFactorAuth {
   id        String   @id @default(cuid())
   tenantId  String
@@ -263,20 +276,23 @@ model PendingTwoFactorAuth {
   @@map("pending_two_factor_auth")
 }
 
-/// One row per SMS code sent, whether for a login challenge or for
-/// verifying a phone number during setup. `phone` is snapshotted per-row
-/// (not read from User) because a SETUP challenge's phone may differ from
-/// whatever's currently saved on the user.
+/// One row per code sent, whether for a login challenge or for verifying a
+/// destination during setup. `channel`/`destination` are snapshotted per-row
+/// (not read from User) because a SETUP challenge's destination may differ
+/// from whatever's currently saved on the user — that's the whole point of
+/// verifying it before persisting it.
 model OtpChallenge {
-  id        String     @id @default(cuid())
-  tenantId  String
-  userId    String
-  purpose   OtpPurpose
-  phone     String
-  codeHash  String
-  attempts  Int        @default(0)
-  expiresAt DateTime
-  createdAt DateTime   @default(now())
+  id          String     @id @default(cuid())
+  tenantId    String
+  userId      String
+  purpose     OtpPurpose
+  channel     OtpChannel
+  /// Email address when channel is EMAIL, phone number when SMS.
+  destination String
+  codeHash    String
+  attempts    Int        @default(0)
+  expiresAt   DateTime
+  createdAt   DateTime   @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

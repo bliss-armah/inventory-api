@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
-import { OtpPurpose } from "../../generated/prisma/enums.ts";
+import { OtpPurpose, OtpChannel } from "../../generated/prisma/enums.ts";
 
 export function findPendingAuthByTokenHash(tokenHash: string) {
   return prisma.pendingTwoFactorAuth.findUnique({ where: { tokenHash } });
@@ -30,7 +30,8 @@ export async function replaceActiveChallenge(input: {
   tenantId: string;
   userId: string;
   purpose: OtpPurpose;
-  phone: string;
+  channel: OtpChannel;
+  destination: string;
   codeHash: string;
   expiresAt: Date;
 }) {
@@ -122,19 +123,37 @@ export function deleteAllRememberedDevicesTx(
 export function confirmTwoFactorSetupTx(
   tx: PrismaTransactionClient,
   userId: string,
-  phone: string,
+  input: { channel: OtpChannel; phone?: string },
 ) {
   return tx.user.update({
     where: { id: userId },
-    data: { phone, twoFactorEnabled: true, twoFactorConfirmedAt: new Date() },
+    data: {
+      ...(input.phone === undefined ? {} : { phone: input.phone }),
+      twoFactorChannel: input.channel,
+      twoFactorEnabled: true,
+      twoFactorConfirmedAt: new Date(),
+    },
   });
+}
+
+/**
+ * Used to reject a phone already claimed by another account before a setup
+ * code goes out. Selects only the id — the caller compares identity, and
+ * nothing else about a stranger's account should be readable from here.
+ */
+export function findUserIdByPhone(phone: string) {
+  return prisma.user.findUnique({ where: { phone }, select: { id: true } });
 }
 
 export function disableTwoFactor(userId: string) {
   return prisma.user.update({
     where: { id: userId },
-    data: { twoFactorEnabled: false, twoFactorConfirmedAt: null },
+    data: {
+      twoFactorEnabled: false,
+      twoFactorConfirmedAt: null,
+      twoFactorChannel: null,
+    },
   });
 }
 
-export { OtpPurpose };
+export { OtpPurpose, OtpChannel };

@@ -1,4 +1,4 @@
-import { Pool } from "../../node_modules/@types/pg/index";
+import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.ts";
 import { env } from "../config/env.ts";

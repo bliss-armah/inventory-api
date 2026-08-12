@@ -10,10 +10,29 @@ export const registerSchema = z.object({
   timeZone: z.string().trim().min(1).max(60),
 });
 
-export const loginSchema = z.object({
-  email: z.email().toLowerCase(),
-  password: z.string().min(1),
-});
+/**
+ * One field for both login identifiers — an email address or a phone number.
+ * Which one it is gets decided by lib/identifier.ts, not here, so that a
+ * malformed identifier fails as "invalid credentials" rather than as a
+ * validation error naming the format we expected.
+ *
+ * `email` is still accepted as an alias so clients written against the
+ * email-only login keep working; `identifier` wins when both are sent.
+ */
+export const loginSchema = z
+  .object({
+    identifier: z.string().trim().min(1).max(254).optional(),
+    email: z.string().trim().min(1).max(254).optional(),
+    password: z.string().min(1),
+  })
+  .refine((value) => Boolean(value.identifier ?? value.email), {
+    message: "Provide an email address or phone number",
+    path: ["identifier"],
+  })
+  .transform((value) => ({
+    identifier: (value.identifier ?? value.email) as string,
+    password: value.password,
+  }));
 
 export const forgotPasswordSchema = z.object({
   email: z.email().toLowerCase(),

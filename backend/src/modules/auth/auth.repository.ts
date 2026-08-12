@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import { Role } from "../../generated/prisma/enums.ts";
+import type { Identifier } from "../../lib/identifier.ts";
 import type { RegisterInput } from "./auth.validators.ts";
 
 const withTenantStatus = {
@@ -8,6 +9,25 @@ const withTenantStatus = {
 
 export function findUserByEmail(email: string) {
   return prisma.user.findUnique({ where: { email }, ...withTenantStatus });
+}
+
+/**
+ * Resolves the single account a login identifier points at. Both columns are
+ * unique, so either branch matches at most one user — which is what lets
+ * phone stand in for email as a login credential.
+ */
+export function findUserByIdentifier(identifier: Identifier) {
+  return prisma.user.findUnique({
+    where:
+      identifier.kind === "email"
+        ? { email: identifier.email }
+        : { phone: identifier.phone },
+    ...withTenantStatus,
+  });
+}
+
+export function findUserByPhone(phone: string) {
+  return prisma.user.findUnique({ where: { phone }, ...withTenantStatus });
 }
 
 export function findUserById(id: string) {

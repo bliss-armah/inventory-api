@@ -6,6 +6,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-inventory}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inventory}
       POSTGRES_DB: ${POSTGRES_DB:-inventory}
+    # Published to the host so `npm run dev` outside Docker can reach the
+    # same database — 5432 is the default, but on a dev machine running
+    # several projects' containers it's often already taken, hence the
+    # non-standard default port here.
+    ports:
+      - "${POSTGRES_PORT:-5435}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,37 +29,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # backend/.env is the single source of truth for backend config (secrets,
-    # TTLs, seed vars) — same file whether you run `npm run dev` locally or
-    # `docker compose up`. Only the handful of values that must differ inside
-    # the compose network (DB host, NODE_ENV) are overridden below.
+    # ./.env is the one and only env file — the same one compose reads for
+    # ${VAR} interpolation above, and the same one config/env.ts loads for a
+    # local `npm run dev`. DATABASE_URL is the only value that genuinely has
+    # to differ inside the compose network: host `postgres` (the service name)
+    # rather than localhost. config/env.ts derives the localhost equivalent
+    # from this same file's POSTGRES_USER/PASSWORD/DB — one set of
+    # credentials, not two.
     env_file:
-      - ./backend/.env
+      - ./.env
     environment:
-      NODE_ENV: development
+      # Inherited from ./.env, which ships NODE_ENV=development so OTP codes
+      # are written to the container log instead of needing a live Brevo/Vynfy
+      # account. Set NODE_ENV=production in .env for a real deployment, where
+      # an unconfigured provider becomes a hard error and cookies go secure.
       DATABASE_URL: postgresql://${POSTGRES_USER:-inventory}:${POSTGRES_PASSWORD:-inventory}@postgres:5432/${POSTGRES_DB:-inventory}?schema=public
     healthcheck:
       # Alpine has neither curl nor wget by default; Node is already in the
       # image, so use it directly rather than installing an extra package.
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (res) => process.exit(res.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 10

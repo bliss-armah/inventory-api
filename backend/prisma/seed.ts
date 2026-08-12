@@ -1,12 +1,12 @@
-import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { Pool } from "../node_modules/@types/pg/index";
+import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { env } from "../src/config/env.ts";
 import { PrismaClient } from "../src/generated/prisma/client.ts";
 import { Role } from "../src/generated/prisma/enums.ts";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({ connectionString: env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 function resolvePassword(provided: string | undefined): {

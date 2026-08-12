@@ -1,4 +1,4 @@
-import type { Role } from "../../generated/prisma/enums.ts";
+import type { Role, OtpChannel } from "../../generated/prisma/enums.ts";
 
 export type AuthenticatedUser = {
   id: string;
@@ -22,5 +22,5 @@ export type AuthResult = {
  */
 export type LoginOutcome =
   | ({ status: "success"; viaRememberedDevice: boolean } & AuthResult)
-  | { status: "otp_required"; mfaToken: string }
+  | { status: "otp_required"; mfaToken: string; channel: OtpChannel }
   | { status: "setup_required"; mfaToken: string };
