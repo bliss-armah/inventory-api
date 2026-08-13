@@ -336,4 +336,56 @@ describe("sale returns", () => {
     expect(headerCents).toBe(linesTotalCents);
     expect(headerCents).toBe(666);
   });
+
+  it("rounds a partial return up at an exact half-pesewa boundary instead of truncating the per-unit rate", async () => {
+    await enablePos(tenant.tenant.id, 50);
+
+    const product = await createProduct(tenant.tenant.id);
+    await seedStock(tenant.tenant.id, product.id, location.id, 20);
+
+    const saleRes = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        id: randomUUID(),
+        saleNumber: `SL-${randomUUID().slice(0, 12).toUpperCase()}`,
+        shiftId,
+        soldAt: new Date().toISOString(),
+        paymentMethod: "CASH",
+        amountTendered: "1000.00",
+        items: [
+          {
+            productId: product.id,
+            quantity: 6,
+            unitPrice: "1.10",
+            discountAmount: "0.55",
+          },
+        ],
+      });
+
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleRes.body.data.id },
+      include: { items: true },
+    });
+    if (!sale) {
+      throw new Error("Expected sale to exist after creation");
+    }
+    const saleItem = sale.items[0];
+    if (!saleItem) {
+      throw new Error("Expected sale to have at least one item");
+    }
+    expect(saleItem.lineTotal.toString()).toBe("6.05");
+
+    const res = await request(app)
+      .post(`/api/sales/${sale.id}/returns`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        shiftId,
+        refundMethod: "CASH",
+        items: [{ saleItemId: saleItem.id, quantity: 3, disposition: "RESTOCK" }],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.refundAmount).toBe("3.03");
+  });
 });

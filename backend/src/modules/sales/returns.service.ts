@@ -57,11 +57,13 @@ export async function create(
 
       const refundedSoFar = priorRefund.plus(consumedSoFarRefund);
       const newlyReturnedQuantity = previously + line.quantity;
-      const perUnit = saleItem.lineTotal.dividedBy(saleItem.quantity);
       const lineRefund =
         newlyReturnedQuantity === saleItem.quantity
           ? saleItem.lineTotal.minus(refundedSoFar)
-          : perUnit.times(line.quantity).toDecimalPlaces(2);
+          : saleItem.lineTotal
+              .times(line.quantity)
+              .dividedBy(saleItem.quantity)
+              .toDecimalPlaces(2);
 
       consumedQuantity.set(line.saleItemId, consumedSoFarQuantity + line.quantity);
       consumedRefund.set(line.saleItemId, consumedSoFarRefund.plus(lineRefund));
