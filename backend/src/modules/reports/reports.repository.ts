@@ -184,3 +184,79 @@ export function productsWithNoMovementSince(
 export function findProductsByIds(tenantId: string, ids: string[]) {
   return prisma.product.findMany({ where: { tenantId, id: { in: ids } } });
 }
+
+export async function salesSummary(tenantId: string, since: Date) {
+  const [totals, itemTotalsRows] = await Promise.all([
+    prisma.sale.aggregate({
+      where: { tenantId, soldAt: { gte: since } },
+      _sum: { total: true, discountAmount: true },
+      _count: true,
+    }),
+    prisma.$queryRaw<Array<{ cost: string | null; itemDiscountTotal: string | null }>>(
+      Prisma.sql`
+        SELECT
+          SUM(si.quantity * si."unitCost") AS "cost",
+          SUM(si."discountAmount") AS "itemDiscountTotal"
+        FROM "sale_items" si
+        JOIN "sales" s ON s.id = si."saleId"
+        WHERE si."tenantId" = ${tenantId} AND s."tenantId" = ${tenantId} AND s."soldAt" >= ${since}
+      `,
+    ),
+  ]);
+
+  const itemTotalsRow = itemTotalsRows[0];
+  const cost = itemTotalsRow?.cost
+    ? new Prisma.Decimal(itemTotalsRow.cost)
+    : new Prisma.Decimal(0);
+  const itemDiscountTotal = itemTotalsRow?.itemDiscountTotal
+    ? new Prisma.Decimal(itemTotalsRow.itemDiscountTotal)
+    : new Prisma.Decimal(0);
+
+  const revenue = totals._sum.total ?? new Prisma.Decimal(0);
+  const saleDiscountTotal = totals._sum.discountAmount ?? new Prisma.Decimal(0);
+
+  return {
+    saleCount: totals._count,
+    revenue,
+    discountTotal: saleDiscountTotal.plus(itemDiscountTotal),
+    costOfGoodsSold: cost,
+    grossMargin: revenue.minus(cost),
+  };
+}
+
+export function discountReport(tenantId: string, since: Date, skip: number, take: number) {
+  const where = {
+    tenantId,
+    soldAt: { gte: since },
+    OR: [{ discountAmount: { gt: 0 } }, { items: { some: { discountAmount: { gt: 0 } } } }],
+  };
+
+  return Promise.all([
+    prisma.sale.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { soldAt: "desc" },
+      select: {
+        id: true,
+        saleNumber: true,
+        soldAt: true,
+        subtotal: true,
+        discountAmount: true,
+        discountReason: true,
+        total: true,
+        cashier: { select: { id: true, name: true } },
+        items: {
+          where: { discountAmount: { gt: 0 } },
+          select: {
+            quantity: true,
+            unitPrice: true,
+            discountAmount: true,
+            product: { select: { id: true, name: true, sku: true } },
+          },
+        },
+      },
+    }),
+    prisma.sale.count({ where }),
+  ]);
+}

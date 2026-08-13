@@ -59,6 +59,19 @@ export const PERMISSIONS = {
     // kept to the original management/audit set.
     financial: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR],
   },
+  sales: {
+    operate: [Role.OWNER, Role.CASHIER],
+    return: [Role.OWNER, Role.CASHIER],
+    viewAll: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR],
+  },
+  shifts: {
+    operate: [Role.OWNER, Role.CASHIER],
+    forceClose: [Role.OWNER],
+    viewAll: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR],
+  },
+  customers: {
+    manage: [Role.OWNER, Role.INVENTORY_MANAGER, Role.CASHIER],
+  },
 } as const;
 
 export function roleAllowed(allowed: readonly Role[], role: Role): boolean {

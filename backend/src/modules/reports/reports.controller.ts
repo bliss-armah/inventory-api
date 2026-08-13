@@ -33,3 +33,11 @@ export async function slowMoving(req: Request, res: Response) {
 export async function deadStock(req: Request, res: Response) {
   ok(res, await reportsService.deadStock(req.auth!.tenantId, req.query));
 }
+
+export async function salesSummary(req: Request, res: Response) {
+  ok(res, await reportsService.salesSummary(req.auth!.tenantId, req.query));
+}
+
+export async function discounts(req: Request, res: Response) {
+  ok(res, await reportsService.discounts(req.auth!.tenantId, req.query));
+}

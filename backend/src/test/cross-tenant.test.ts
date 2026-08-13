@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../app";
@@ -7,6 +8,7 @@ import {
   createLocation,
   createProduct,
   deleteTenant,
+  enablePos,
 } from "./fixtures";
 
 /**
@@ -28,6 +30,7 @@ describe("cross-tenant isolation", () => {
   let productA: Awaited<ReturnType<typeof createProduct>>;
   let locationA: Awaited<ReturnType<typeof createLocation>>;
   let supplierA: { id: string };
+  let shiftA: { id: string };
 
   beforeAll(async () => {
     tenantA = await createTenantWithOwner("Tenant A");
@@ -36,6 +39,18 @@ describe("cross-tenant isolation", () => {
     locationA = await createLocation(tenantA.tenant.id);
     supplierA = await prisma.supplier.create({
       data: { tenantId: tenantA.tenant.id, name: "Supplier A" },
+    });
+
+    await enablePos(tenantA.tenant.id);
+    await enablePos(tenantB.tenant.id);
+
+    shiftA = await prisma.shift.create({
+      data: {
+        tenantId: tenantA.tenant.id,
+        locationId: locationA.id,
+        cashierId: tenantA.user.id,
+        openingFloat: 0,
+      },
     });
   });
 
@@ -116,5 +131,77 @@ describe("cross-tenant isolation", () => {
     expect(res.status).toBe(200);
     const ids = res.body.data.items.map((item: { id: string }) => item.id);
     expect(ids).not.toContain(productA.id);
+  });
+
+  it("400s creating a sale against another tenant's shift", async () => {
+    const res = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${tenantB.token}`)
+      .send({
+        id: randomUUID(),
+        saleNumber: `SL-${randomUUID().slice(0, 12).toUpperCase()}`,
+        shiftId: shiftA.id,
+        soldAt: new Date().toISOString(),
+        paymentMethod: "CASH",
+        amountTendered: "100.00",
+        items: [{ productId: productA.id, quantity: 1, unitPrice: "20.00" }],
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+  });
+
+  it("404s reading another tenant's sale", async () => {
+    const sale = await prisma.sale.create({
+      data: {
+        id: randomUUID(),
+        tenantId: tenantA.tenant.id,
+        saleNumber: `SL-${randomUUID().slice(0, 12).toUpperCase()}`,
+        locationId: locationA.id,
+        shiftId: shiftA.id,
+        cashierId: tenantA.user.id,
+        subtotal: 20,
+        total: 20,
+        paymentMethod: "CASH",
+        amountTendered: 20,
+        changeGiven: 0,
+        soldAt: new Date(),
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/sales/${sale.id}`)
+      .set("Authorization", `Bearer ${tenantB.token}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("404s reading another tenant's customer", async () => {
+    const customer = await prisma.customer.create({
+      data: { tenantId: tenantA.tenant.id, name: "Customer A" },
+    });
+
+    const res = await request(app)
+      .get(`/api/customers/${customer.id}`)
+      .set("Authorization", `Bearer ${tenantB.token}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("404s closing another tenant's shift", async () => {
+    const res = await request(app)
+      .post(`/api/shifts/${shiftA.id}/close`)
+      .set("Authorization", `Bearer ${tenantB.token}`)
+      .send({ countedCash: "0.00" });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("400s requesting the catalog for another tenant's location", async () => {
+    const res = await request(app)
+      .get(`/api/sales/catalog?locationId=${locationA.id}`)
+      .set("Authorization", `Bearer ${tenantB.token}`);
+
+    expect(res.status).toBe(400);
   });
 });
