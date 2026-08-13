@@ -215,7 +215,7 @@ export async function salesSummary(tenantId: string, since: Date) {
         FROM "sale_return_items" ri
         JOIN "sale_returns" r ON r.id = ri."saleReturnId"
         JOIN "sale_items" si ON si.id = ri."saleItemId"
-        WHERE ri."tenantId" = ${tenantId} AND r."tenantId" = ${tenantId} AND r."returnedAt" >= ${since}
+        WHERE ri."tenantId" = ${tenantId} AND r."tenantId" = ${tenantId} AND si."tenantId" = ${tenantId} AND r."returnedAt" >= ${since}
       `,
     ),
   ]);
