@@ -58,6 +58,7 @@ describe("sale creation is idempotent on the client-generated id", () => {
       .set("Authorization", `Bearer ${cashierToken}`)
       .send(payload);
     expect(first.status).toBe(201);
+    expect(first.body.data.items[0].unitCost).toBeUndefined();
 
     const second = await request(app)
       .post("/api/sales")
@@ -65,6 +66,7 @@ describe("sale creation is idempotent on the client-generated id", () => {
       .send(payload);
     expect(second.status).toBe(200);
     expect(second.body.data.id).toBe(payload.id);
+    expect(second.body.data.items[0].unitCost).toBeUndefined();
 
     const inventory = await prisma.inventory.findUnique({
       where: { productId_locationId: { productId: product.id, locationId: location.id } },

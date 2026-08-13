@@ -280,4 +280,40 @@ describe("sales", () => {
     expect(ownerReadsB.status).toBe(200);
     expect(ownerReadsB.body.data.items[0].unitCost).toBeDefined();
   });
+
+  it("hides unitCost from a cashier's own sale-creation response, and lets an owner see it", async () => {
+    const product = await createProduct(tenant.tenant.id);
+    await seedStock(tenant.tenant.id, product.id, location.id, 10);
+
+    const cashierSale = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send(
+        salePayload({
+          items: [{ productId: product.id, quantity: 1, unitPrice: "20.00" }],
+        }),
+      );
+    expect(cashierSale.status).toBe(201);
+    expect(cashierSale.body.data.items[0].unitCost).toBeUndefined();
+
+    const ownerShiftRes = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tenant.token}`)
+      .send({ locationId: location.id, openingFloat: "0.00" });
+
+    const ownerSale = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${tenant.token}`)
+      .send({
+        id: randomUUID(),
+        saleNumber: `SL-${randomUUID().slice(0, 12).toUpperCase()}`,
+        shiftId: ownerShiftRes.body.data.id,
+        soldAt: new Date().toISOString(),
+        paymentMethod: "CASH",
+        amountTendered: "100.00",
+        items: [{ productId: product.id, quantity: 1, unitPrice: "20.00" }],
+      });
+    expect(ownerSale.status).toBe(201);
+    expect(ownerSale.body.data.items[0].unitCost).toBeDefined();
+  });
 });

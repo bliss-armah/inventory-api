@@ -11,6 +11,7 @@ export async function create(req: Request, res: Response) {
   const { sale, alreadyExisted } = await salesService.create(
     req.auth!.tenantId,
     req.auth!.userId,
+    req.auth!.role,
     input,
   );
   if (alreadyExisted) {

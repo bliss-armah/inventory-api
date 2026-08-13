@@ -12,14 +12,39 @@ import { computeSaleTotals, assertWithinDiscountCap } from "./sales.money.ts";
 import * as salesRepository from "./sales.repository.ts";
 import type { CreateSaleInput } from "./sales.validators.ts";
 
+type SaleWithItems = NonNullable<Awaited<ReturnType<typeof salesRepository.findById>>>;
+
+function applySaleVisibility(sale: SaleWithItems, role: Role) {
+  const canViewAll = roleAllowed(PERMISSIONS.sales.viewAll, role);
+  if (canViewAll) {
+    return sale;
+  }
+
+  return {
+    ...sale,
+    items: sale.items.map((item) => ({
+      id: item.id,
+      tenantId: item.tenantId,
+      saleId: item.saleId,
+      productId: item.productId,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountAmount: item.discountAmount,
+      lineTotal: item.lineTotal,
+      product: item.product,
+    })),
+  };
+}
+
 export async function create(
   tenantId: string,
   userId: string,
+  role: Role,
   input: CreateSaleInput,
 ) {
   const existing = await salesRepository.findById(tenantId, input.id);
   if (existing) {
-    return { sale: existing, alreadyExisted: true };
+    return { sale: applySaleVisibility(existing, role), alreadyExisted: true };
   }
 
   const shift = await assertOpenShift(tenantId, userId, input.shiftId);
@@ -150,7 +175,7 @@ export async function create(
     if (!fullSale) {
       throw new NotFoundError("Sale was created but could not be found");
     }
-    return { sale: fullSale, alreadyExisted: false };
+    return { sale: applySaleVisibility(fullSale, role), alreadyExisted: false };
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -158,7 +183,7 @@ export async function create(
     ) {
       const committed = await salesRepository.findById(tenantId, input.id);
       if (committed) {
-        return { sale: committed, alreadyExisted: true };
+        return { sale: applySaleVisibility(committed, role), alreadyExisted: true };
       }
       throw new ConflictError(`Sale number ${input.saleNumber} is already in use`);
     }
@@ -176,24 +201,8 @@ export async function get(tenantId: string, userId: string, role: Role, id: stri
   if (!canViewAll && sale.cashierId !== userId) {
     throw new NotFoundError("Sale not found");
   }
-  if (canViewAll) {
-    return sale;
-  }
 
-  return {
-    ...sale,
-    items: sale.items.map((item) => ({
-      id: item.id,
-      tenantId: item.tenantId,
-      saleId: item.saleId,
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discountAmount: item.discountAmount,
-      lineTotal: item.lineTotal,
-      product: item.product,
-    })),
-  };
+  return applySaleVisibility(sale, role);
 }
 
 export function list(tenantId: string, userId: string, role: Role, rawQuery: unknown) {
