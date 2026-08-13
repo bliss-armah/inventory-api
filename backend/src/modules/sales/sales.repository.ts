@@ -34,12 +34,18 @@ export function list(
   tenantId: string,
   skip: number,
   take: number,
-  filters: { cashierId?: string; shiftId?: string },
+  filters: { cashierId?: string; shiftId?: string; from?: Date; to?: Date },
 ) {
   const where = {
     tenantId,
     ...(filters.cashierId && { cashierId: filters.cashierId }),
     ...(filters.shiftId && { shiftId: filters.shiftId }),
+    ...((filters.from || filters.to) && {
+      soldAt: {
+        ...(filters.from && { gte: filters.from }),
+        ...(filters.to && { lte: filters.to }),
+      },
+    }),
   };
 
   return Promise.all([

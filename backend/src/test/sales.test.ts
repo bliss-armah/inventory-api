@@ -205,6 +205,55 @@ describe("sales", () => {
     expect(second.status).toBe(409);
   });
 
+  it("filters GET /api/sales by the soldAt range", async () => {
+    const product = await createProduct(tenant.tenant.id);
+    await seedStock(tenant.tenant.id, product.id, location.id, 10);
+
+    const older = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send(
+        salePayload({
+          soldAt: "2020-03-15T10:00:00.000Z",
+          items: [{ productId: product.id, quantity: 1, unitPrice: "20.00" }],
+        }),
+      );
+    const newer = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send(
+        salePayload({
+          soldAt: "2021-03-15T10:00:00.000Z",
+          items: [{ productId: product.id, quantity: 1, unitPrice: "20.00" }],
+        }),
+      );
+    expect(older.status).toBe(201);
+    expect(newer.status).toBe(201);
+
+    const firstYear = await request(app)
+      .get("/api/sales?from=2020-01-01T00:00:00.000Z&to=2020-12-31T23:59:59.999Z")
+      .set("Authorization", `Bearer ${cashierToken}`);
+    expect(firstYear.status).toBe(200);
+    expect(firstYear.body.data.items.map((sale: { id: string }) => sale.id)).toEqual([
+      older.body.data.id,
+    ]);
+
+    const bothYears = await request(app)
+      .get("/api/sales?from=2020-01-01T00:00:00.000Z&to=2021-12-31T23:59:59.999Z")
+      .set("Authorization", `Bearer ${cashierToken}`);
+    expect(bothYears.status).toBe(200);
+    expect(bothYears.body.data.items.map((sale: { id: string }) => sale.id)).toEqual([
+      newer.body.data.id,
+      older.body.data.id,
+    ]);
+
+    const emptyWindow = await request(app)
+      .get("/api/sales?from=2019-01-01T00:00:00.000Z&to=2019-12-31T23:59:59.999Z")
+      .set("Authorization", `Bearer ${cashierToken}`);
+    expect(emptyWindow.status).toBe(200);
+    expect(emptyWindow.body.data.items).toEqual([]);
+  });
+
   it("scopes GET /api/sales/:id to the cashier's own sale, hides unitCost from a cashier, and lets an owner read both", async () => {
     const cashierA = await createCashier(tenant.tenant.id);
     const cashierB = await createCashier(tenant.tenant.id);

@@ -33,4 +33,9 @@ export const catalogQuerySchema = z.object({
   locationId: z.string().trim().min(1),
 });
 
+export const salesListQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
