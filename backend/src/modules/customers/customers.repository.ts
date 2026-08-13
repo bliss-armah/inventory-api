@@ -30,8 +30,18 @@ export function list(tenantId: string, skip: number, take: number, search?: stri
   ]);
 }
 
-export function listSales(tenantId: string, customerId: string, skip: number, take: number) {
-  const where = { tenantId, customerId };
+export function listSales(
+  tenantId: string,
+  customerId: string,
+  skip: number,
+  take: number,
+  filters: { cashierId?: string },
+) {
+  const where = {
+    tenantId,
+    customerId,
+    ...(filters.cashierId && { cashierId: filters.cashierId }),
+  };
 
   return Promise.all([
     prisma.sale.findMany({

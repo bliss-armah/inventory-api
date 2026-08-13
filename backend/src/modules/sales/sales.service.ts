@@ -10,11 +10,25 @@ import { recordMovement } from "../stock-movements/stock-movements.service.ts";
 import { assertOpenShift, assertShiftStillOpen } from "../shifts/shifts.service.ts";
 import { computeSaleTotals, assertWithinDiscountCap } from "./sales.money.ts";
 import * as salesRepository from "./sales.repository.ts";
+import { salesListQuerySchema } from "./sales.validators.ts";
 import type { CreateSaleInput } from "./sales.validators.ts";
 
-type SaleWithItems = NonNullable<Awaited<ReturnType<typeof salesRepository.findById>>>;
+type SaleItemForVisibility = {
+  id: string;
+  tenantId: string;
+  saleId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: Prisma.Decimal;
+  discountAmount: Prisma.Decimal;
+  lineTotal: Prisma.Decimal;
+  product?: unknown;
+};
 
-function applySaleVisibility(sale: SaleWithItems, role: Role) {
+export function applySaleVisibility<TSale extends { items: SaleItemForVisibility[] }>(
+  sale: TSale,
+  role: Role,
+) {
   const canViewAll = roleAllowed(PERMISSIONS.sales.viewAll, role);
   if (canViewAll) {
     return sale;
@@ -207,8 +221,9 @@ export async function get(tenantId: string, userId: string, role: Role, id: stri
 
 export function list(tenantId: string, userId: string, role: Role, rawQuery: unknown) {
   const cashierId = roleAllowed(PERMISSIONS.sales.viewAll, role) ? undefined : userId;
+  const { from, to } = salesListQuerySchema.parse(rawQuery);
   return paginate(rawQuery, (skip, take) =>
-    salesRepository.list(tenantId, skip, take, { cashierId }),
+    salesRepository.list(tenantId, skip, take, { cashierId, from, to }),
   );
 }
 

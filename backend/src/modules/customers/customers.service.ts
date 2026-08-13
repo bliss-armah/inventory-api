@@ -1,7 +1,10 @@
+import type { Role } from "../../generated/prisma/enums.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";
+import { PERMISSIONS, roleAllowed } from "../../shared/permissions.ts";
 import { withUniqueConstraint } from "../../shared/prisma-errors.ts";
+import { applySaleVisibility } from "../sales/sales.service.ts";
 import * as customersRepository from "./customers.repository.ts";
 import type { CreateCustomerInput, UpdateCustomerInput } from "./customers.validators.ts";
 
@@ -58,9 +61,17 @@ export function list(tenantId: string, rawQuery: unknown) {
   );
 }
 
-export async function listSales(tenantId: string, customerId: string, rawQuery: unknown) {
+export async function listSales(
+  tenantId: string,
+  userId: string,
+  role: Role,
+  customerId: string,
+  rawQuery: unknown,
+) {
   await get(tenantId, customerId);
-  return paginate(rawQuery, (skip, take) =>
-    customersRepository.listSales(tenantId, customerId, skip, take),
+  const cashierId = roleAllowed(PERMISSIONS.sales.viewAll, role) ? undefined : userId;
+  const page = await paginate(rawQuery, (skip, take) =>
+    customersRepository.listSales(tenantId, customerId, skip, take, { cashierId }),
   );
+  return { ...page, items: page.items.map((sale) => applySaleVisibility(sale, role)) };
 }

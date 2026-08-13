@@ -31,5 +31,14 @@ export async function update(req: Request, res: Response) {
 }
 
 export async function listSales(req: Request, res: Response) {
-  ok(res, await customersService.listSales(req.auth!.tenantId, requireParam(req, "id"), req.query));
+  ok(
+    res,
+    await customersService.listSales(
+      req.auth!.tenantId,
+      req.auth!.userId,
+      req.auth!.role,
+      requireParam(req, "id"),
+      req.query,
+    ),
+  );
 }
