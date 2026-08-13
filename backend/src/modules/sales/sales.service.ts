@@ -75,7 +75,7 @@ export async function create(
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const newSale = await prisma.$transaction(async (tx) => {
       await assertShiftStillOpen(tx, tenantId, shift.id);
 
       const sale = await salesRepository.createSale(tx, {
@@ -145,6 +145,12 @@ export async function create(
 
       return { sale, alreadyExisted: false };
     });
+
+    const fullSale = await salesRepository.findById(tenantId, newSale.sale.id);
+    if (!fullSale) {
+      throw new NotFoundError("Sale was created but could not be found");
+    }
+    return { sale: fullSale, alreadyExisted: false };
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

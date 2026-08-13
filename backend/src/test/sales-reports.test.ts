@@ -62,9 +62,12 @@ describe("sales reports", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.saleCount).toBe(1);
-    expect(Number(res.body.data.revenue)).toBe(80);
-    expect(Number(res.body.data.costOfGoodsSold)).toBe(40);
-    expect(Number(res.body.data.grossMargin)).toBe(40);
+    expect(Number(res.body.data.net.revenue)).toBe(80);
+    expect(Number(res.body.data.net.costOfGoodsSold)).toBe(40);
+    expect(Number(res.body.data.net.grossMargin)).toBe(40);
+    expect(Number(res.body.data.gross.revenue)).toBe(80);
+    expect(Number(res.body.data.gross.costOfGoodsSold)).toBe(40);
+    expect(Number(res.body.data.gross.grossMargin)).toBe(40);
   });
 
   it("filters on soldAt, so a backdated sale falls outside a short window", async () => {
@@ -130,9 +133,12 @@ describe("sales reports", () => {
       .set("Authorization", `Bearer ${discountTenant.token}`);
 
     expect(res.status).toBe(200);
-    expect(Number(res.body.data.revenue)).toBe(72);
-    expect(Number(res.body.data.costOfGoodsSold)).toBe(40);
-    expect(Number(res.body.data.grossMargin)).toBe(32);
+    expect(Number(res.body.data.net.revenue)).toBe(72);
+    expect(Number(res.body.data.net.costOfGoodsSold)).toBe(40);
+    expect(Number(res.body.data.net.grossMargin)).toBe(32);
+    expect(Number(res.body.data.gross.revenue)).toBe(72);
+    expect(Number(res.body.data.gross.costOfGoodsSold)).toBe(40);
+    expect(Number(res.body.data.gross.grossMargin)).toBe(32);
     expect(Number(res.body.data.discountTotal)).toBe(8);
 
     await deleteTenant(discountTenant.tenant.id);
@@ -190,5 +196,147 @@ describe("sales reports", () => {
     }
     expect(discountedRow.items).toHaveLength(1);
     expect(Number(discountedRow.items[0].discountAmount)).toBe(5);
+  });
+
+  it("nets a restocked return out of revenue and COGS, and keeps damaged cost inside net COGS", async () => {
+    const netTenant = await createTenantWithOwner("Reports Net Co");
+    const location = await createLocation(netTenant.tenant.id);
+    await enablePos(netTenant.tenant.id, 20);
+
+    const cashier = await createCashier(netTenant.tenant.id);
+    const cashierToken = tokenFor(cashier);
+    const shiftRes = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ locationId: location.id, openingFloat: "0.00" });
+    const shiftId = shiftRes.body.data.id;
+
+    const product = await createProduct(netTenant.tenant.id);
+    await seedStock(netTenant.tenant.id, product.id, location.id, 50);
+
+    const saleRes = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        id: randomUUID(),
+        saleNumber: `SL-${randomUUID().slice(0, 12).toUpperCase()}`,
+        shiftId,
+        soldAt: new Date().toISOString(),
+        paymentMethod: "CASH",
+        amountTendered: "1000.00",
+        items: [{ productId: product.id, quantity: 10, unitPrice: "20.00" }],
+      });
+    expect(saleRes.status).toBe(201);
+    const saleItemId = saleRes.body.data.items[0].id;
+
+    const restockRes = await request(app)
+      .post(`/api/sales/${saleRes.body.data.id}/returns`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        shiftId,
+        refundMethod: "CASH",
+        items: [{ saleItemId, quantity: 2, disposition: "RESTOCK" }],
+      });
+    expect(restockRes.status).toBe(201);
+
+    const damagedRes = await request(app)
+      .post(`/api/sales/${saleRes.body.data.id}/returns`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        shiftId,
+        refundMethod: "CASH",
+        items: [{ saleItemId, quantity: 3, disposition: "DAMAGED" }],
+      });
+    expect(damagedRes.status).toBe(201);
+
+    const res = await request(app)
+      .get("/api/reports/sales-summary?days=1")
+      .set("Authorization", `Bearer ${netTenant.token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body.data;
+
+    expect(body.saleCount).toBe(1);
+    expect(body.returnCount).toBe(2);
+
+    expect(Number(body.gross.revenue)).toBe(200);
+    expect(Number(body.gross.costOfGoodsSold)).toBe(100);
+    expect(Number(body.gross.grossMargin)).toBe(100);
+
+    expect(Number(body.returns.refundTotal)).toBe(100);
+    expect(Number(body.returns.restockedCost)).toBe(20);
+    expect(Number(body.returns.damagedCost)).toBe(30);
+
+    expect(Number(body.net.revenue)).toBe(100);
+    expect(Number(body.net.costOfGoodsSold)).toBe(80);
+    expect(Number(body.net.grossMargin)).toBe(20);
+
+    expect(Number(body.net.revenue)).toBe(
+      Number(body.gross.revenue) - Number(body.returns.refundTotal),
+    );
+    expect(Number(body.net.costOfGoodsSold)).toBe(
+      Number(body.gross.costOfGoodsSold) - Number(body.returns.restockedCost),
+    );
+    expect(Number(body.net.grossMargin)).toBe(
+      Number(body.net.revenue) - Number(body.net.costOfGoodsSold),
+    );
+
+    await deleteTenant(netTenant.tenant.id);
+  });
+
+  it("attributes a return by returnedAt, not by the sale's soldAt", async () => {
+    const windowTenant = await createTenantWithOwner("Reports Window Co");
+    const location = await createLocation(windowTenant.tenant.id);
+    await enablePos(windowTenant.tenant.id, 20);
+
+    const cashier = await createCashier(windowTenant.tenant.id);
+    const cashierToken = tokenFor(cashier);
+    const shiftRes = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ locationId: location.id, openingFloat: "0.00" });
+    const shiftId = shiftRes.body.data.id;
+
+    const product = await createProduct(windowTenant.tenant.id);
+    await seedStock(windowTenant.tenant.id, product.id, location.id, 50);
+
+    const saleRes = await request(app)
+      .post("/api/sales")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        id: randomUUID(),
+        saleNumber: `SL-${randomUUID().slice(0, 12).toUpperCase()}`,
+        shiftId,
+        soldAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+        paymentMethod: "CASH",
+        amountTendered: "1000.00",
+        items: [{ productId: product.id, quantity: 2, unitPrice: "20.00" }],
+      });
+    expect(saleRes.status).toBe(201);
+
+    const returnRes = await request(app)
+      .post(`/api/sales/${saleRes.body.data.id}/returns`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        shiftId,
+        refundMethod: "CASH",
+        items: [
+          { saleItemId: saleRes.body.data.items[0].id, quantity: 1, disposition: "RESTOCK" },
+        ],
+      });
+    expect(returnRes.status).toBe(201);
+
+    const narrow = await request(app)
+      .get("/api/reports/sales-summary?days=1")
+      .set("Authorization", `Bearer ${windowTenant.token}`);
+
+    expect(narrow.body.data.saleCount).toBe(0);
+    expect(narrow.body.data.returnCount).toBe(1);
+    expect(Number(narrow.body.data.gross.revenue)).toBe(0);
+    expect(Number(narrow.body.data.returns.refundTotal)).toBe(20);
+    expect(Number(narrow.body.data.net.revenue)).toBe(-20);
+    expect(Number(narrow.body.data.net.costOfGoodsSold)).toBe(-10);
+
+    await deleteTenant(windowTenant.tenant.id);
   });
 });
