@@ -8,6 +8,7 @@ platformTenantsRoutes.use(authenticatePlatformAdmin);
 
 platformTenantsRoutes.get("/stats", platformTenantsController.stats);
 platformTenantsRoutes.get("/tenants", platformTenantsController.list);
+platformTenantsRoutes.post("/tenants", platformTenantsController.create);
 platformTenantsRoutes.get("/tenants/:id", platformTenantsController.getOne);
 platformTenantsRoutes.patch(
   "/tenants/:id/entitlements",

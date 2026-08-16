@@ -1,7 +1,22 @@
 import { prisma } from "../../lib/prisma.ts";
 import { Role } from "../../generated/prisma/enums.ts";
 import type { Identifier } from "../../lib/identifier.ts";
-import type { RegisterInput } from "./auth.validators.ts";
+import type { EntitlementsInput } from "../tenants/tenants.validators.ts";
+
+/**
+ * Exactly what createTenantWithOwner reads, declared structurally rather than
+ * as a union of the two callers' schemas: public registration supplies a
+ * password and platform onboarding does not, but neither difference matters
+ * here, and naming the callers' types would couple this module to both.
+ */
+type TenantWithOwnerInput = {
+  businessName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  country: string;
+  timeZone: string;
+};
 
 const withTenantStatus = {
   include: { tenant: { select: { subscriptionStatus: true } } },
@@ -40,8 +55,9 @@ export function findUserById(id: string) {
  * Small businesses never have to configure any of this themselves.
  */
 export function createTenantWithOwner(
-  input: RegisterInput,
+  input: TenantWithOwnerInput,
   passwordHash: string,
+  entitlements: EntitlementsInput = {},
 ) {
   return prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.create({
@@ -75,6 +91,9 @@ export function createTenantWithOwner(
     const settings = await tx.businessSettings.create({
       data: {
         tenantId: tenant.id,
+        // Unset flags arrive as undefined, which Prisma reads as "use the
+        // column default" — so the public-registration path is unchanged.
+        ...entitlements,
       },
     });
 

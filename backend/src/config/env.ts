@@ -40,6 +40,10 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL: z.string().default("15m"),
   REFRESH_TOKEN_TTL: z.string().default("30d"),
   PASSWORD_RESET_TOKEN_TTL: z.string().default("1h"),
+  // An owner invite is a password-set link, so it reuses PasswordResetToken —
+  // but it has to survive an onboarding conversation and an unread inbox, not
+  // a five-minute "I forgot my password" round trip.
+  OWNER_INVITE_TTL: z.string().default("7d"),
   COOKIE_SECRET: z.string().min(16),
   // Deliberately a separate secret from JWT_ACCESS_SECRET: a platform-admin
   // token must never be verifiable by tenant auth middleware, or vice versa.
