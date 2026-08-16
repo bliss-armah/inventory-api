@@ -17,13 +17,27 @@ const percent = z
   .regex(/^\d+(\.\d{1,2})?$/, "Must be a percentage like 10 or 12.50")
   .refine((value) => Number(value) <= 100, "Must be 100 or less");
 
-export const updateSettingsSchema = z.object({
+/**
+ * What a business owner may change about their own settings: the discount cap,
+ * and nothing else. strictObject so an attempt to set an entitlement comes back
+ * as a visible 400 rather than a silent no-op the UI would render as "saved".
+ */
+export const ownerUpdateSettingsSchema = z.strictObject({
+  maxDiscountPercent: percent,
+});
+
+/**
+ * Entitlements — what the business is provisioned for. Assigned by the platform
+ * operator at onboarding and changed only through modules/platform-tenants;
+ * deliberately not reachable from any tenant-facing route.
+ */
+export const entitlementsSchema = z.object({
   inventoryMode: z.enum(InventoryMode).optional(),
   enablePos: z.boolean().optional(),
   enableBatchTracking: z.boolean().optional(),
   enableExpiryTracking: z.boolean().optional(),
-  maxDiscountPercent: percent.optional(),
 });
 
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
-export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+export type OwnerUpdateSettingsInput = z.infer<typeof ownerUpdateSettingsSchema>;
+export type EntitlementsInput = z.infer<typeof entitlementsSchema>;

@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma";
-import type { UpdateSettingsInput, UpdateTenantInput } from "./tenants.validators";
+import type { OwnerUpdateSettingsInput, UpdateTenantInput } from "./tenants.validators";
 
 export function getTenantById(tenantId: string) {
   return prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
@@ -13,6 +13,8 @@ export function getSettings(tenantId: string) {
   return prisma.businessSettings.findUniqueOrThrow({ where: { tenantId } });
 }
 
-export function updateSettings(tenantId: string, input: UpdateSettingsInput) {
+// Owner-facing only: the discount cap. Entitlement writes go through
+// platform-tenants.repository, which is the only place allowed to set them.
+export function updateSettings(tenantId: string, input: OwnerUpdateSettingsInput) {
   return prisma.businessSettings.update({ where: { tenantId }, data: input });
 }

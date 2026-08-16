@@ -4,7 +4,7 @@ import { logActivity } from "../../lib/activity-logger.ts";
 import * as tenantsRepository from "./tenants.repository.ts";
 import * as locationsRepository from "../locations/locations.repository.ts";
 import type {
-  UpdateSettingsInput,
+  OwnerUpdateSettingsInput,
   UpdateTenantInput,
 } from "./tenants.validators.ts";
 
@@ -31,20 +31,31 @@ export function getSettings(tenantId: string) {
   return tenantsRepository.getSettings(tenantId);
 }
 
+/**
+ * Single-location mode is a lie if the tenant still has several locations —
+ * stock would be stranded at one the app no longer shows. Exported because
+ * inventoryMode is an entitlement now, set by a platform admin, and that path
+ * needs exactly the same guard.
+ */
+export async function assertInventoryModeChangeAllowed(
+  tenantId: string,
+  mode: InventoryMode | undefined,
+): Promise<void> {
+  if (mode !== InventoryMode.SINGLE_LOCATION) return;
+
+  const locationCount = await locationsRepository.countForTenant(tenantId);
+  if (locationCount > 1) {
+    throw new BadRequestError(
+      "Cannot switch to single-location mode while multiple locations exist. Remove the extra locations first.",
+    );
+  }
+}
+
 export async function updateSettings(
   tenantId: string,
   userId: string,
-  input: UpdateSettingsInput,
+  input: OwnerUpdateSettingsInput,
 ) {
-  if (input.inventoryMode === InventoryMode.SINGLE_LOCATION) {
-    const locationCount = await locationsRepository.countForTenant(tenantId);
-    if (locationCount > 1) {
-      throw new BadRequestError(
-        "Cannot switch to single-location mode while multiple locations exist. Remove the extra locations first.",
-      );
-    }
-  }
-
   const settings = await tenantsRepository.updateSettings(tenantId, input);
   await logActivity({
     tenantId,

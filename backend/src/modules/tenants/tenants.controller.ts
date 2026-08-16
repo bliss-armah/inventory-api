@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { ok } from "../../shared/api-response";
 import * as tenantsService from "./tenants.service";
-import { updateSettingsSchema, updateTenantSchema } from "./tenants.validators";
+import { ownerUpdateSettingsSchema, updateTenantSchema } from "./tenants.validators";
 
 export async function getCurrentTenant(req: Request, res: Response) {
   ok(res, await tenantsService.getCurrentTenant(req.auth!.tenantId));
@@ -20,6 +20,6 @@ export async function getSettings(req: Request, res: Response) {
 }
 
 export async function updateSettings(req: Request, res: Response) {
-  const input = updateSettingsSchema.parse(req.body);
+  const input = ownerUpdateSettingsSchema.parse(req.body);
   ok(res, await tenantsService.updateSettings(req.auth!.tenantId, req.auth!.userId, input));
 }

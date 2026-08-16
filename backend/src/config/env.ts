@@ -27,11 +27,23 @@ const envSchema = z.object({
   CORS_ORIGINS: z
     .string()
     .transform((value) => value.split(",").map((origin) => origin.trim())),
+  // Businesses are onboarded by a platform admin, so self-service signup is
+  // off unless deliberately enabled. Deliberately not z.coerce.boolean():
+  // coercion reads the string "false" as truthy, which would quietly leave
+  // signup wide open — the exact opposite of what this setting is for.
+  ALLOW_PUBLIC_REGISTRATION: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   DATABASE_URL: z.string().min(1),
   JWT_ACCESS_SECRET: z.string().min(16),
   ACCESS_TOKEN_TTL: z.string().default("15m"),
   REFRESH_TOKEN_TTL: z.string().default("30d"),
   PASSWORD_RESET_TOKEN_TTL: z.string().default("1h"),
+  // An owner invite is a password-set link, so it reuses PasswordResetToken —
+  // but it has to survive an onboarding conversation and an unread inbox, not
+  // a five-minute "I forgot my password" round trip.
+  OWNER_INVITE_TTL: z.string().default("7d"),
   COOKIE_SECRET: z.string().min(16),
   // Deliberately a separate secret from JWT_ACCESS_SECRET: a platform-admin
   // token must never be verifiable by tenant auth middleware, or vice versa.

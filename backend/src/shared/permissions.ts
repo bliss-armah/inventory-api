@@ -59,6 +59,16 @@ export const PERMISSIONS = {
     view: [Role.OWNER],
     manage: [Role.OWNER],
   },
+  // Split from `tenants` because business settings are the one part of the
+  // tenant record the till genuinely needs: enablePos decides whether the till
+  // opens, inventoryMode whether a location has to be picked, and
+  // maxDiscountPercent what a cashier may discount. `manage` covers only the
+  // discount cap — the entitlement fields are writable exclusively by a
+  // platform admin, via modules/platform-tenants.
+  settings: {
+    view: [Role.OWNER, Role.CASHIER],
+    manage: [Role.OWNER],
+  },
   users: {
     manage: [Role.OWNER],
   },

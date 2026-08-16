@@ -1,8 +1,22 @@
 import { prisma } from "../../lib/prisma.ts";
 import { SubscriptionStatus } from "../../generated/prisma/enums.ts";
+import type { EntitlementsInput } from "./platform-tenants.validators.ts";
 
+// Shared by list() and findById(), so the platform dashboard can show what
+// each business is provisioned for without a second round trip per row.
 const include = {
   _count: { select: { users: true, locations: true, products: true } },
+  // `settings` is the relation field on Tenant; `businessSettings` is only the
+  // model accessor on the Prisma client. Using the latter here is a runtime
+  // error that the generated include types do not catch.
+  settings: {
+    select: {
+      inventoryMode: true,
+      enablePos: true,
+      enableBatchTracking: true,
+      enableExpiryTracking: true,
+    },
+  },
 } as const;
 
 export function list(skip: number, take: number, search?: string) {
@@ -49,6 +63,12 @@ export function updateSubscriptionStatus(
     where: { id },
     data: { subscriptionStatus: status, ...extra },
   });
+}
+
+// The only write path for entitlement fields anywhere in the codebase. The
+// tenant-facing repository deliberately cannot set them.
+export function updateEntitlements(tenantId: string, data: EntitlementsInput) {
+  return prisma.businessSettings.update({ where: { tenantId }, data });
 }
 
 export function revokeAllRefreshTokensForTenant(tenantId: string) {

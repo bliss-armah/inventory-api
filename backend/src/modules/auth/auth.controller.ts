@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { created, ok } from "../../shared/api-response.ts";
+import { env } from "../../config/env.ts";
 import { ForbiddenError, UnauthorizedError } from "../../shared/errors.ts";
 import { Role } from "../../generated/prisma/enums.ts";
 import {
@@ -29,6 +30,14 @@ import {
 import { verifyPassword } from "../../lib/password.ts";
 
 export async function register(req: Request, res: Response) {
+  // Checked before validation on purpose: when signup is closed the caller
+  // should hear "not allowed", not a critique of the payload they sent.
+  if (!env.ALLOW_PUBLIC_REGISTRATION) {
+    throw new ForbiddenError(
+      "Public registration is disabled. Businesses are created by the platform administrator.",
+    );
+  }
+
   const input = registerSchema.parse(req.body);
   const result = await authService.register(input);
   if (result.status === "success") {
