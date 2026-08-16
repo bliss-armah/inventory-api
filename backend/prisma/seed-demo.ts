@@ -51,10 +51,8 @@ const CATEGORIES = ["Beverages", "Dry Goods", "Cleaning", "Packaging"];
 const BRANDS = ["Voltic", "Nestlé", "Unilever", "Generic"];
 
 const STAFF: Array<{ name: string; email: string; role: Role }> = [
-  { name: "Ama Mensah", email: "manager@demo.local", role: Role.INVENTORY_MANAGER },
-  { name: "Kofi Boateng", email: "storekeeper@demo.local", role: Role.STOREKEEPER },
-  { name: "Akua Danso", email: "purchasing@demo.local", role: Role.PURCHASING_OFFICER },
-  { name: "Yaw Owusu", email: "auditor@demo.local", role: Role.AUDITOR },
+  { name: "Ama Mensah", email: "cashier1@demo.local", role: Role.CASHIER },
+  { name: "Kofi Boateng", email: "cashier2@demo.local", role: Role.CASHIER },
 ];
 
 /**

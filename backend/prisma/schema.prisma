@@ -17,10 +17,7 @@ datasource db {
 
 enum Role {
   OWNER
-  INVENTORY_MANAGER
-  STOREKEEPER
-  PURCHASING_OFFICER
-  AUDITOR
+  CASHIER
 }
 
 enum SubscriptionStatus {
@@ -101,6 +98,23 @@ enum StockCountStatus {
   COMPLETED
 }
 
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+  CARD
+  BANK_TRANSFER
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum ReturnDisposition {
+  RESTOCK
+  DAMAGED
+}
+
 // ---------------------------------------------------------------------------
 // Tenancy, users & settings
 // ---------------------------------------------------------------------------
@@ -120,28 +134,34 @@ model Tenant {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  users            User[]
-  settings         BusinessSettings?
-  locations        Location[]
-  categories       Category[]
-  brands           Brand[]
-  suppliers        Supplier[]
-  products         Product[]
-  inventory        Inventory[]
-  stockMovements   StockMovement[]
-  purchaseOrders   PurchaseOrder[]
-  goodsReceipts    GoodsReceipt[]
-  stockAdjustments StockAdjustment[]
-  stockTransfers   StockTransfer[]
-  stockCounts      StockCount[]
-  activityLogs     ActivityLog[]
-  refreshTokens    RefreshToken[]
-  passwordResets   PasswordResetToken[]
-  priceHistory     ProductPriceHistory[]
+  users                 User[]
+  settings              BusinessSettings?
+  locations             Location[]
+  categories            Category[]
+  brands                Brand[]
+  suppliers             Supplier[]
+  products              Product[]
+  inventory             Inventory[]
+  stockMovements        StockMovement[]
+  purchaseOrders        PurchaseOrder[]
+  goodsReceipts         GoodsReceipt[]
+  stockAdjustments      StockAdjustment[]
+  stockTransfers        StockTransfer[]
+  stockCounts           StockCount[]
+  activityLogs          ActivityLog[]
+  refreshTokens         RefreshToken[]
+  passwordResets        PasswordResetToken[]
+  priceHistory          ProductPriceHistory[]
   pendingTwoFactorAuths PendingTwoFactorAuth[]
   otpChallenges         OtpChallenge[]
   rememberedDevices     RememberedDevice[]
   twoFactorBackupCodes  TwoFactorBackupCode[]
+  customers             Customer[]
+  shifts                Shift[]
+  sales                 Sale[]
+  saleItems             SaleItem[]
+  saleReturns           SaleReturn[]
+  saleReturnItems       SaleReturnItem[]
 
   @@map("tenants")
 }
@@ -153,6 +173,7 @@ model BusinessSettings {
   enablePos            Boolean       @default(false)
   enableBatchTracking  Boolean       @default(false)
   enableExpiryTracking Boolean       @default(false)
+  maxDiscountPercent   Decimal       @default(0) @db.Decimal(5, 2)
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
@@ -162,27 +183,27 @@ model BusinessSettings {
 }
 
 model User {
-  id                   String    @id @default(cuid())
+  id                   String      @id @default(cuid())
   tenantId             String
   name                 String
-  email                String    @unique
+  email                String      @unique
   passwordHash         String
   role                 Role
-  isActive             Boolean   @default(true)
+  isActive             Boolean     @default(true)
   lastLoginAt          DateTime?
   // Unique because it's a login identifier in its own right, not just a
   // contact detail — findUserByIdentifier resolves one account from it, the
   // same way email does. Nullable: Postgres permits many NULLs in a unique
   // index, so accounts that never add a phone are unaffected.
-  phone                String?   @unique
-  twoFactorEnabled     Boolean   @default(false)
+  phone                String?     @unique
+  twoFactorEnabled     Boolean     @default(false)
   twoFactorConfirmedAt DateTime?
   // Where login OTPs go once setup is confirmed. Null until then.
   twoFactorChannel     OtpChannel?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
-  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refreshTokens          RefreshToken[]
   passwordResets         PasswordResetToken[]
   pendingTwoFactorAuths  PendingTwoFactorAuth[]
@@ -192,13 +213,16 @@ model User {
   activityLogs           ActivityLog[]
   stockMovements         StockMovement[]
   stockAdjustments       StockAdjustment[]
-  createdPurchaseOrders  PurchaseOrder[]      @relation("PurchaseOrderCreatedBy")
-  approvedPurchaseOrders PurchaseOrder[]      @relation("PurchaseOrderApprovedBy")
+  createdPurchaseOrders  PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
+  approvedPurchaseOrders PurchaseOrder[]        @relation("PurchaseOrderApprovedBy")
   goodsReceipts          GoodsReceipt[]
-  requestedTransfers     StockTransfer[]      @relation("StockTransferRequestedBy")
-  approvedTransfers      StockTransfer[]      @relation("StockTransferApprovedBy")
+  requestedTransfers     StockTransfer[]        @relation("StockTransferRequestedBy")
+  approvedTransfers      StockTransfer[]        @relation("StockTransferApprovedBy")
   stockCounts            StockCount[]
   productPriceChanges    ProductPriceHistory[]
+  shifts                 Shift[]
+  sales                  Sale[]
+  saleReturns            SaleReturn[]
 
   @@index([tenantId])
   @@map("users")
@@ -364,6 +388,9 @@ model Location {
   stockCounts      StockCount[]
   transfersFrom    StockTransfer[]   @relation("StockTransferFromLocation")
   transfersTo      StockTransfer[]   @relation("StockTransferToLocation")
+  shifts           Shift[]
+  sales            Sale[]
+  saleReturns      SaleReturn[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -439,9 +466,9 @@ model Product {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category           Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category           Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand              Brand?                @relation(fields: [brandId], references: [id], onDelete: SetNull)
   inventory          Inventory[]
   stockMovements     StockMovement[]
   purchaseOrderItems PurchaseOrderItem[]
@@ -450,6 +477,8 @@ model Product {
   stockTransferItems StockTransferItem[]
   stockCountItems    StockCountItem[]
   priceHistory       ProductPriceHistory[]
+  saleItems          SaleItem[]
+  saleReturnItems    SaleReturnItem[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
@@ -768,4 +797,147 @@ model PlatformAdminRefreshToken {
 
   @@index([platformAdminId])
   @@map("platform_admin_refresh_tokens")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  phone     String?
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sales  Sale[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+  @@map("customers")
+}
+
+model Shift {
+  id           String      @id @default(cuid())
+  tenantId     String
+  locationId   String
+  cashierId    String
+  status       ShiftStatus @default(OPEN)
+  openingFloat Decimal     @db.Decimal(14, 2)
+  countedCash  Decimal?    @db.Decimal(14, 2)
+  expectedCash Decimal?    @db.Decimal(14, 2)
+  variance     Decimal?    @db.Decimal(14, 2)
+  notes        String?
+  openedAt     DateTime    @default(now())
+  closedAt     DateTime?
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location Location     @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  cashier  User         @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  sales    Sale[]
+  returns  SaleReturn[]
+
+  @@index([tenantId])
+  @@index([tenantId, cashierId])
+  @@map("shifts")
+}
+
+model Sale {
+  id               String        @id
+  tenantId         String
+  saleNumber       String
+  locationId       String
+  shiftId          String
+  cashierId        String
+  customerId       String?
+  subtotal         Decimal       @db.Decimal(14, 2)
+  discountAmount   Decimal       @default(0) @db.Decimal(14, 2)
+  discountReason   String?
+  total            Decimal       @db.Decimal(14, 2)
+  paymentMethod    PaymentMethod
+  amountTendered   Decimal       @db.Decimal(14, 2)
+  changeGiven      Decimal       @db.Decimal(14, 2)
+  priceDiscrepancy Boolean       @default(false)
+  soldAt           DateTime
+  createdAt        DateTime      @default(now())
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location Location     @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  shift    Shift        @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  cashier  User         @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  customer Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items    SaleItem[]
+  returns  SaleReturn[]
+
+  @@unique([tenantId, saleNumber])
+  @@index([tenantId])
+  @@index([tenantId, soldAt])
+  @@index([tenantId, shiftId])
+  @@map("sales")
+}
+
+model SaleItem {
+  id             String  @id @default(cuid())
+  tenantId       String
+  saleId         String
+  productId      String
+  quantity       Int
+  unitPrice      Decimal @db.Decimal(14, 2)
+  unitCost       Decimal @db.Decimal(14, 2)
+  discountAmount Decimal @default(0) @db.Decimal(14, 2)
+  lineTotal      Decimal @db.Decimal(14, 2)
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale        Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product     Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  returnItems SaleReturnItem[]
+
+  @@index([tenantId, saleId])
+  @@index([tenantId, productId])
+  @@map("sale_items")
+}
+
+model SaleReturn {
+  id           String        @id @default(cuid())
+  tenantId     String
+  saleId       String
+  returnNumber String
+  locationId   String
+  shiftId      String
+  userId       String
+  reason       String?
+  refundAmount Decimal       @db.Decimal(14, 2)
+  refundMethod PaymentMethod
+  returnedAt   DateTime      @default(now())
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale     Sale             @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  location Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  shift    Shift            @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  user     User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items    SaleReturnItem[]
+
+  @@unique([tenantId, returnNumber])
+  @@index([tenantId, saleId])
+  @@map("sale_returns")
+}
+
+model SaleReturnItem {
+  id           String            @id @default(cuid())
+  tenantId     String
+  saleReturnId String
+  saleItemId   String
+  productId    String
+  quantity     Int
+  disposition  ReturnDisposition
+  unitPrice    Decimal           @db.Decimal(14, 2)
+  refundAmount Decimal           @db.Decimal(14, 2)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  saleReturn SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  saleItem   SaleItem   @relation(fields: [saleItemId], references: [id], onDelete: Restrict)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, saleReturnId])
+  @@map("sale_return_items")
 }

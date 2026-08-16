@@ -9,9 +9,10 @@ export const stockTransfersRoutes = Router();
 stockTransfersRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.stockTransfers.manage);
+const view = authorize(...PERMISSIONS.stockTransfers.view);
 
-stockTransfersRoutes.get("/", stockTransfersController.list);
-stockTransfersRoutes.get("/:id", stockTransfersController.getOne);
+stockTransfersRoutes.get("/", view, stockTransfersController.list);
+stockTransfersRoutes.get("/:id", view, stockTransfersController.getOne);
 stockTransfersRoutes.post("/", manage, stockTransfersController.create);
 stockTransfersRoutes.post("/:id/approve", manage, stockTransfersController.approve);
 stockTransfersRoutes.post("/:id/cancel", manage, stockTransfersController.cancel);

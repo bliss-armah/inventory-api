@@ -135,6 +135,11 @@ export function createProduct(tenantId: string, minimumStock = 0) {
  * then delete the tenant for everything else to cascade normally.
  */
 export async function deleteTenant(tenantId: string) {
+  await prisma.saleReturnItem.deleteMany({ where: { tenantId } });
+  await prisma.saleReturn.deleteMany({ where: { tenantId } });
+  await prisma.saleItem.deleteMany({ where: { tenantId } });
+  await prisma.sale.deleteMany({ where: { tenantId } });
+  await prisma.shift.deleteMany({ where: { tenantId } });
   await prisma.goodsReceipt.deleteMany({ where: { tenantId } });
   await prisma.purchaseOrder.deleteMany({ where: { tenantId } });
   await prisma.stockTransfer.deleteMany({ where: { tenantId } });
@@ -144,4 +149,31 @@ export async function deleteTenant(tenantId: string) {
   await prisma.inventory.deleteMany({ where: { tenantId } });
   await prisma.product.deleteMany({ where: { tenantId } });
   await prisma.tenant.delete({ where: { id: tenantId } });
+}
+
+export function createCashier(tenantId: string, namePrefix = "Test Cashier") {
+  return createUserWithPassword(tenantId, Role.CASHIER, namePrefix);
+}
+
+export function tokenFor(user: { id: string; tenantId: string; role: Role }) {
+  return signAccessToken({ sub: user.id, tenantId: user.tenantId, role: user.role });
+}
+
+export function enablePos(tenantId: string, maxDiscountPercent = 0) {
+  return prisma.businessSettings.upsert({
+    where: { tenantId },
+    create: { tenantId, enablePos: true, maxDiscountPercent },
+    update: { enablePos: true, maxDiscountPercent },
+  });
+}
+
+export function seedStock(
+  tenantId: string,
+  productId: string,
+  locationId: string,
+  quantity: number,
+) {
+  return prisma.inventory.create({
+    data: { tenantId, productId, locationId, quantity },
+  });
 }

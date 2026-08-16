@@ -184,3 +184,116 @@ export function productsWithNoMovementSince(
 export function findProductsByIds(tenantId: string, ids: string[]) {
   return prisma.product.findMany({ where: { tenantId, id: { in: ids } } });
 }
+
+export async function salesSummary(tenantId: string, since: Date) {
+  const [totals, itemTotalsRows, returnTotals, returnCostRows] = await Promise.all([
+    prisma.sale.aggregate({
+      where: { tenantId, soldAt: { gte: since } },
+      _sum: { total: true, discountAmount: true },
+      _count: true,
+    }),
+    prisma.$queryRaw<Array<{ cost: string | null; itemDiscountTotal: string | null }>>(
+      Prisma.sql`
+        SELECT
+          SUM(si.quantity * si."unitCost") AS "cost",
+          SUM(si."discountAmount") AS "itemDiscountTotal"
+        FROM "sale_items" si
+        JOIN "sales" s ON s.id = si."saleId"
+        WHERE si."tenantId" = ${tenantId} AND s."tenantId" = ${tenantId} AND s."soldAt" >= ${since}
+      `,
+    ),
+    prisma.saleReturn.aggregate({
+      where: { tenantId, returnedAt: { gte: since } },
+      _sum: { refundAmount: true },
+      _count: true,
+    }),
+    prisma.$queryRaw<Array<{ restockedCost: string | null; damagedCost: string | null }>>(
+      Prisma.sql`
+        SELECT
+          SUM(CASE WHEN ri.disposition = 'RESTOCK' THEN ri.quantity * si."unitCost" ELSE 0 END) AS "restockedCost",
+          SUM(CASE WHEN ri.disposition = 'DAMAGED' THEN ri.quantity * si."unitCost" ELSE 0 END) AS "damagedCost"
+        FROM "sale_return_items" ri
+        JOIN "sale_returns" r ON r.id = ri."saleReturnId"
+        JOIN "sale_items" si ON si.id = ri."saleItemId"
+        WHERE ri."tenantId" = ${tenantId} AND r."tenantId" = ${tenantId} AND si."tenantId" = ${tenantId} AND r."returnedAt" >= ${since}
+      `,
+    ),
+  ]);
+
+  const itemTotalsRow = itemTotalsRows[0];
+  const cost = itemTotalsRow?.cost
+    ? new Prisma.Decimal(itemTotalsRow.cost)
+    : new Prisma.Decimal(0);
+  const itemDiscountTotal = itemTotalsRow?.itemDiscountTotal
+    ? new Prisma.Decimal(itemTotalsRow.itemDiscountTotal)
+    : new Prisma.Decimal(0);
+
+  const returnCostRow = returnCostRows[0];
+  const restockedCost = returnCostRow?.restockedCost
+    ? new Prisma.Decimal(returnCostRow.restockedCost)
+    : new Prisma.Decimal(0);
+  const damagedCost = returnCostRow?.damagedCost
+    ? new Prisma.Decimal(returnCostRow.damagedCost)
+    : new Prisma.Decimal(0);
+
+  const grossRevenue = totals._sum.total ?? new Prisma.Decimal(0);
+  const saleDiscountTotal = totals._sum.discountAmount ?? new Prisma.Decimal(0);
+  const refundTotal = returnTotals._sum.refundAmount ?? new Prisma.Decimal(0);
+
+  const netRevenue = grossRevenue.minus(refundTotal);
+  const netCost = cost.minus(restockedCost);
+
+  return {
+    saleCount: totals._count,
+    returnCount: returnTotals._count,
+    net: {
+      revenue: netRevenue,
+      costOfGoodsSold: netCost,
+      grossMargin: netRevenue.minus(netCost),
+    },
+    gross: {
+      revenue: grossRevenue,
+      costOfGoodsSold: cost,
+      grossMargin: grossRevenue.minus(cost),
+    },
+    returns: { refundTotal, restockedCost, damagedCost },
+    discountTotal: saleDiscountTotal.plus(itemDiscountTotal),
+  };
+}
+
+export function discountReport(tenantId: string, since: Date, skip: number, take: number) {
+  const where = {
+    tenantId,
+    soldAt: { gte: since },
+    OR: [{ discountAmount: { gt: 0 } }, { items: { some: { discountAmount: { gt: 0 } } } }],
+  };
+
+  return Promise.all([
+    prisma.sale.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { soldAt: "desc" },
+      select: {
+        id: true,
+        saleNumber: true,
+        soldAt: true,
+        subtotal: true,
+        discountAmount: true,
+        discountReason: true,
+        total: true,
+        cashier: { select: { id: true, name: true } },
+        items: {
+          where: { discountAmount: { gt: 0 } },
+          select: {
+            quantity: true,
+            unitPrice: true,
+            discountAmount: true,
+            product: { select: { id: true, name: true, sku: true } },
+          },
+        },
+      },
+    }),
+    prisma.sale.count({ where }),
+  ]);
+}

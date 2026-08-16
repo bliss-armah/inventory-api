@@ -331,11 +331,11 @@ describe("two-factor authentication", () => {
   it("does not gate a non-owner role without opt-in, but lets them opt in and disable", async () => {
     const { tenant, user: owner } = await createTenantWithOwnerAndPassword();
     tenantIds.push(tenant.id);
-    const storekeeper = await createUserWithPassword(tenant.id, Role.STOREKEEPER);
+    const cashier = await createUserWithPassword(tenant.id, Role.CASHIER);
 
     const loginRes = await request(app)
       .post("/api/auth/login")
-      .send({ identifier: storekeeper.email, password: TEST_PASSWORD });
+      .send({ identifier: cashier.email, password: TEST_PASSWORD });
     expect(loginRes.body.data.status).toBe("success");
     const fullToken = loginRes.body.data.accessToken;
 
@@ -360,7 +360,7 @@ describe("two-factor authentication", () => {
       .send({ password: TEST_PASSWORD });
     expect(disableRes.status).toBe(200);
 
-    const updated = await prisma.user.findUnique({ where: { id: storekeeper.id } });
+    const updated = await prisma.user.findUnique({ where: { id: cashier.id } });
     expect(updated?.twoFactorEnabled).toBe(false);
     expect(updated?.twoFactorChannel).toBeNull();
 
@@ -392,7 +392,7 @@ describe("two-factor authentication", () => {
   it("never accepts a pending-auth (mfaToken) against a normal route, or a full token against /2fa/verify", async () => {
     const { tenant, user } = await createTenantWithOwnerAndPassword();
     tenantIds.push(tenant.id);
-    const storekeeper = await createUserWithPassword(tenant.id, Role.STOREKEEPER);
+    const cashier = await createUserWithPassword(tenant.id, Role.CASHIER);
 
     const loginRes = await request(app)
       .post("/api/auth/login")
@@ -404,10 +404,10 @@ describe("two-factor authentication", () => {
       .set("Authorization", `Bearer ${mfaToken}`);
     expect(crossUseRes.status).toBe(401);
 
-    const storekeeperLoginRes = await request(app)
+    const cashierLoginRes = await request(app)
       .post("/api/auth/login")
-      .send({ identifier: storekeeper.email, password: TEST_PASSWORD });
-    const fullToken = storekeeperLoginRes.body.data.accessToken;
+      .send({ identifier: cashier.email, password: TEST_PASSWORD });
+    const fullToken = cashierLoginRes.body.data.accessToken;
 
     const reverseUseRes = await request(app)
       .post("/api/auth/2fa/verify")

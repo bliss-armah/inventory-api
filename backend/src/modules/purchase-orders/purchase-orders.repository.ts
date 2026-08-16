@@ -72,6 +72,27 @@ export function list(
   ]);
 }
 
+/**
+ * The dashboard is readable by every authenticated role, including CASHIER,
+ * so it gets an explicit select carrying only what the summary card renders —
+ * never `costPrice`, on the order line or on the product.
+ */
+export function listRecent(tenantId: string, take: number) {
+  return prisma.purchaseOrder.findMany({
+    where: { tenantId },
+    take,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      createdAt: true,
+      supplier: { select: { id: true, name: true } },
+      location: { select: { id: true, name: true } },
+    },
+  });
+}
+
 export function findByIdInTenant(tenantId: string, id: string) {
   return prisma.purchaseOrder.findFirst({ where: { id, tenantId }, include });
 }

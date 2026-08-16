@@ -9,9 +9,10 @@ export const stockCountsRoutes = Router();
 stockCountsRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.stockCounts.manage);
+const view = authorize(...PERMISSIONS.stockCounts.view);
 
-stockCountsRoutes.get("/", stockCountsController.list);
-stockCountsRoutes.get("/:id", stockCountsController.getOne);
+stockCountsRoutes.get("/", view, stockCountsController.list);
+stockCountsRoutes.get("/:id", view, stockCountsController.getOne);
 stockCountsRoutes.post("/", manage, stockCountsController.create);
 stockCountsRoutes.patch("/:id/items", manage, stockCountsController.updateItems);
 stockCountsRoutes.post("/:id/complete", manage, stockCountsController.complete);

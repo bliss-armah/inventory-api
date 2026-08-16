@@ -9,7 +9,8 @@ export const categoriesRoutes = Router();
 categoriesRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.categories.manage);
+const view = authorize(...PERMISSIONS.categories.view);
 
-categoriesRoutes.get("/", categoriesController.list);
+categoriesRoutes.get("/", view, categoriesController.list);
 categoriesRoutes.post("/", manage, categoriesController.create);
 categoriesRoutes.patch("/:id", manage, categoriesController.update);

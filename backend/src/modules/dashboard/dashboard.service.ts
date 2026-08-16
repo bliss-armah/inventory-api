@@ -22,16 +22,16 @@ export async function getDashboard(tenantId: string, role: Role) {
 
   const [
     totalProducts,
-    [recentPurchaseOrders],
-    [recentStockMovements],
+    recentPurchaseOrders,
+    recentStockMovements,
     valuationRows,
     lowStockResult,
     outOfStockResult,
     activityResult,
   ] = await Promise.all([
     prisma.product.count({ where: { tenantId } }),
-    purchaseOrdersRepository.list(tenantId, 0, RECENT_LIMIT, {}),
-    stockMovementsRepository.list(tenantId, 0, RECENT_LIMIT, {}),
+    purchaseOrdersRepository.listRecent(tenantId, RECENT_LIMIT),
+    stockMovementsRepository.listRecent(tenantId, RECENT_LIMIT),
     canSeeFinancials
       ? reportsRepository.inventoryValuation(tenantId)
       : Promise.resolve(null),

@@ -9,9 +9,10 @@ export const productsRoutes = Router();
 productsRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.products.manage);
+const view = authorize(...PERMISSIONS.products.view);
 
-productsRoutes.get("/", productsController.list);
-productsRoutes.get("/:id", productsController.getOne);
-productsRoutes.get("/:id/price-history", productsController.getPriceHistory);
+productsRoutes.get("/", view, productsController.list);
+productsRoutes.get("/:id", view, productsController.getOne);
+productsRoutes.get("/:id/price-history", view, productsController.getPriceHistory);
 productsRoutes.post("/", manage, productsController.create);
 productsRoutes.patch("/:id", manage, productsController.update);

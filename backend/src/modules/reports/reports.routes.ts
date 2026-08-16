@@ -20,3 +20,5 @@ reportsRoutes.get("/purchase-history", purchaseHistory, reportsController.purcha
 reportsRoutes.get("/fast-moving", financial, reportsController.fastMoving);
 reportsRoutes.get("/slow-moving", financial, reportsController.slowMoving);
 reportsRoutes.get("/dead-stock", financial, reportsController.deadStock);
+reportsRoutes.get("/sales-summary", financial, reportsController.salesSummary);
+reportsRoutes.get("/discounts", financial, reportsController.discounts);

@@ -64,3 +64,22 @@ export function list(
     prisma.stockMovement.count({ where }),
   ]);
 }
+
+/**
+ * The dashboard is readable by every authenticated role, including CASHIER,
+ * so it gets an explicit select carrying only what the summary card renders —
+ * never `costPrice` on the product.
+ */
+export function listRecent(tenantId: string, take: number) {
+  return prisma.stockMovement.findMany({
+    where: { tenantId },
+    take,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      type: true,
+      product: { select: { id: true, name: true } },
+      location: { select: { id: true, name: true } },
+    },
+  });
+}

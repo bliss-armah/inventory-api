@@ -93,3 +93,25 @@ export async function deadStock(tenantId: string, rawQuery: unknown) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return reportsRepository.productsWithNoMovementSince(tenantId, since, locationId);
 }
+
+const salesWindowSchema = z.object({
+  days: z.coerce.number().int().positive().max(365).default(30),
+});
+
+function windowStart(days: number): Date {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+export function salesSummary(tenantId: string, rawQuery: unknown) {
+  const { days } = salesWindowSchema.parse(rawQuery);
+  return reportsRepository.salesSummary(tenantId, windowStart(days));
+}
+
+export function discounts(tenantId: string, rawQuery: unknown) {
+  const { days } = salesWindowSchema.parse(rawQuery);
+  const { page, pageSize } = paginationQuerySchema.parse(rawQuery);
+  const { skip, take } = toSkipTake({ page, pageSize });
+  return reportsRepository
+    .discountReport(tenantId, windowStart(days), skip, take)
+    .then(([items, total]) => ({ items, page, pageSize, total }));
+}

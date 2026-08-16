@@ -18,3 +18,7 @@ frontend/next-env.d.ts
 # OS / editor
 .DS_Store
 *.log
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
+docs/superpowers/
