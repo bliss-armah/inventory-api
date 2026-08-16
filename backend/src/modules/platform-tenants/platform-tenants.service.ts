@@ -3,7 +3,11 @@ import { logActivity } from "../../lib/activity-logger.ts";
 import { BadRequestError, NotFoundError } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";
 import * as platformTenantsRepository from "./platform-tenants.repository.ts";
-import type { SuspendTenantInput } from "./platform-tenants.validators.ts";
+import { assertInventoryModeChangeAllowed } from "../tenants/tenants.service.ts";
+import type {
+  EntitlementsInput,
+  SuspendTenantInput,
+} from "./platform-tenants.validators.ts";
 
 export function list(rawQuery: unknown) {
   return paginate(rawQuery, (skip, take, search) =>
@@ -65,6 +69,31 @@ export async function reactivate(id: string) {
   });
 
   return updated;
+}
+
+/**
+ * Assigns what a business is provisioned for. findOne first so an unknown id
+ * is a 404 rather than a Prisma "record not found" surfacing as a 500, and the
+ * inventory-mode guard is shared with the owner-facing path so switching to
+ * single-location can't strand stock at a location the app stops showing.
+ */
+export async function updateEntitlements(id: string, input: EntitlementsInput) {
+  const tenant = await findOne(id);
+  await assertInventoryModeChangeAllowed(tenant.id, input.inventoryMode);
+
+  const settings = await platformTenantsRepository.updateEntitlements(tenant.id, input);
+
+  // No userId: the actor is a platform admin, not a user inside this tenant —
+  // same as suspend/reactivate above.
+  await logActivity({
+    tenantId: tenant.id,
+    action: "ENTITLEMENTS_UPDATED",
+    description: `Features set by platform: ${Object.entries(input)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(", ")}`,
+  });
+
+  return settings;
 }
 
 export function stats() {

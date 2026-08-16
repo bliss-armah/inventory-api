@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.ts";
-import { signAccessToken } from "../lib/jwt.ts";
+import { signAccessToken, signPlatformAccessToken } from "../lib/jwt.ts";
 import { hashPassword } from "../lib/password.ts";
 import {
   Role,
@@ -157,6 +157,30 @@ export function createCashier(tenantId: string, namePrefix = "Test Cashier") {
 
 export function tokenFor(user: { id: string; tenantId: string; role: Role }) {
   return signAccessToken({ sub: user.id, tenantId: user.tenantId, role: user.role });
+}
+
+/**
+ * A platform admin oversees every tenant and authenticates against a separate
+ * secret, so its token is minted by signPlatformAccessToken rather than
+ * tokenFor — a tenant token is not merely unauthorised on platform routes, it
+ * is unverifiable there, and vice versa.
+ */
+export async function createPlatformAdmin(namePrefix = "Test Platform Admin") {
+  const admin = await prisma.platformAdmin.create({
+    data: {
+      name: namePrefix,
+      email: `${unique("platform-admin")}@example.test`,
+      passwordHash: DUMMY_PASSWORD_HASH,
+    },
+  });
+  return { admin, token: signPlatformAccessToken({ sub: admin.id }) };
+}
+
+export async function deletePlatformAdmin(id: string) {
+  await prisma.platformAdminRefreshToken.deleteMany({
+    where: { platformAdminId: id },
+  });
+  await prisma.platformAdmin.delete({ where: { id } });
 }
 
 export function enablePos(tenantId: string, maxDiscountPercent = 0) {

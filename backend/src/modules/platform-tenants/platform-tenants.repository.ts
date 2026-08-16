@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import { SubscriptionStatus } from "../../generated/prisma/enums.ts";
+import type { EntitlementsInput } from "./platform-tenants.validators.ts";
 
 const include = {
   _count: { select: { users: true, locations: true, products: true } },
@@ -49,6 +50,12 @@ export function updateSubscriptionStatus(
     where: { id },
     data: { subscriptionStatus: status, ...extra },
   });
+}
+
+// The only write path for entitlement fields anywhere in the codebase. The
+// tenant-facing repository deliberately cannot set them.
+export function updateEntitlements(tenantId: string, data: EntitlementsInput) {
+  return prisma.businessSettings.update({ where: { tenantId }, data });
 }
 
 export function revokeAllRefreshTokensForTenant(tenantId: string) {

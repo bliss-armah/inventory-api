@@ -9,5 +9,9 @@ platformTenantsRoutes.use(authenticatePlatformAdmin);
 platformTenantsRoutes.get("/stats", platformTenantsController.stats);
 platformTenantsRoutes.get("/tenants", platformTenantsController.list);
 platformTenantsRoutes.get("/tenants/:id", platformTenantsController.getOne);
+platformTenantsRoutes.patch(
+  "/tenants/:id/entitlements",
+  platformTenantsController.updateEntitlements,
+);
 platformTenantsRoutes.post("/tenants/:id/suspend", platformTenantsController.suspend);
 platformTenantsRoutes.post("/tenants/:id/reactivate", platformTenantsController.reactivate);
