@@ -45,6 +45,24 @@ describe("platform admin sets a tenant's entitlements", () => {
     expect(on.body.data.enableBatchTracking).toBe(true);
   });
 
+  it("returns each tenant's current features in the list", async () => {
+    // The dashboard seeds its Features dialog from this, and the relation is
+    // `settings` while the Prisma accessor is `businessSettings` — a mix-up
+    // the generated include types don't catch, so assert on the payload.
+    const res = await request(app)
+      .get("/api/platform/tenants")
+      .set("Authorization", `Bearer ${platform.token}`);
+
+    expect(res.status).toBe(200);
+    const listed = res.body.data.items.find(
+      (item: { id: string }) => item.id === tenant.tenant.id,
+    );
+    expect(listed.settings).toMatchObject({
+      enablePos: expect.any(Boolean),
+      inventoryMode: expect.any(String),
+    });
+  });
+
   it("refuses a tenant owner's token — a different secret entirely", async () => {
     const res = await request(app)
       .patch(`/api/platform/tenants/${tenant.tenant.id}/entitlements`)
