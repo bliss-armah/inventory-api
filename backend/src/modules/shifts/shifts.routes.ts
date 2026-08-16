@@ -9,8 +9,12 @@ export const shiftsRoutes = Router();
 
 shiftsRoutes.use(authenticate, requirePos);
 
-shiftsRoutes.get("/", shiftsController.list);
-shiftsRoutes.get("/current", shiftsController.current);
+shiftsRoutes.get(
+  "/",
+  authorize(...PERMISSIONS.shifts.viewAll, ...PERMISSIONS.shifts.operate),
+  shiftsController.list,
+);
+shiftsRoutes.get("/current", authorize(...PERMISSIONS.shifts.operate), shiftsController.current);
 shiftsRoutes.post("/", authorize(...PERMISSIONS.shifts.operate), shiftsController.open);
 shiftsRoutes.post("/:id/close", authorize(...PERMISSIONS.shifts.operate), shiftsController.close);
 shiftsRoutes.post(

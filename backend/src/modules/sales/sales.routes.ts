@@ -9,8 +9,12 @@ export const salesRoutes = Router();
 
 salesRoutes.use(authenticate, requirePos);
 
-salesRoutes.get("/catalog", salesController.catalog);
-salesRoutes.get("/", salesController.list);
+salesRoutes.get("/catalog", authorize(...PERMISSIONS.sales.operate), salesController.catalog);
+salesRoutes.get(
+  "/",
+  authorize(...PERMISSIONS.sales.viewAll, ...PERMISSIONS.sales.operate),
+  salesController.list,
+);
 salesRoutes.post("/", authorize(...PERMISSIONS.sales.operate), salesController.create);
 salesRoutes.get(
   "/:id",

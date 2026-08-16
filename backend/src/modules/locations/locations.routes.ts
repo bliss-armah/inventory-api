@@ -9,7 +9,8 @@ export const locationsRoutes = Router();
 locationsRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.locations.manage);
+const view = authorize(...PERMISSIONS.locations.view);
 
-locationsRoutes.get("/", locationsController.list);
+locationsRoutes.get("/", view, locationsController.list);
 locationsRoutes.post("/", manage, locationsController.create);
 locationsRoutes.patch("/:id", manage, locationsController.update);

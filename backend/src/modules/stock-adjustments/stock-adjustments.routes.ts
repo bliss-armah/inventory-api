@@ -8,7 +8,11 @@ export const stockAdjustmentsRoutes = Router();
 
 stockAdjustmentsRoutes.use(authenticate);
 
-stockAdjustmentsRoutes.get("/", stockAdjustmentsController.list);
+stockAdjustmentsRoutes.get(
+  "/",
+  authorize(...PERMISSIONS.stockAdjustments.view),
+  stockAdjustmentsController.list,
+);
 stockAdjustmentsRoutes.post(
   "/",
   authorize(...PERMISSIONS.stockAdjustments.create),

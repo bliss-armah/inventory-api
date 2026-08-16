@@ -21,3 +21,4 @@ frontend/next-env.d.ts
 
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
+docs/superpowers/

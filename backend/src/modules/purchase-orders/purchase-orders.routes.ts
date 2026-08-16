@@ -8,8 +8,10 @@ export const purchaseOrdersRoutes = Router();
 
 purchaseOrdersRoutes.use(authenticate);
 
-purchaseOrdersRoutes.get("/", purchaseOrdersController.list);
-purchaseOrdersRoutes.get("/:id", purchaseOrdersController.getOne);
+const view = authorize(...PERMISSIONS.purchaseOrders.view);
+
+purchaseOrdersRoutes.get("/", view, purchaseOrdersController.list);
+purchaseOrdersRoutes.get("/:id", view, purchaseOrdersController.getOne);
 
 purchaseOrdersRoutes.post(
   "/",

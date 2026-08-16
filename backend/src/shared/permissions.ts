@@ -10,67 +10,87 @@ import { Role } from "../generated/prisma/enums.ts";
  */
 export const PERMISSIONS = {
   categories: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER],
+    view: [Role.OWNER],
+    manage: [Role.OWNER],
   },
   brands: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER],
+    view: [Role.OWNER],
+    manage: [Role.OWNER],
   },
   suppliers: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER, Role.PURCHASING_OFFICER],
+    view: [Role.OWNER],
+    manage: [Role.OWNER],
   },
   locations: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER],
+    view: [Role.OWNER],
+    manage: [Role.OWNER],
   },
   products: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER],
+    manage: [Role.OWNER],
+    view: [Role.OWNER],
   },
   stockAdjustments: {
-    create: [Role.OWNER, Role.INVENTORY_MANAGER, Role.STOREKEEPER],
+    view: [Role.OWNER],
+    create: [Role.OWNER],
+  },
+  inventory: {
+    view: [Role.OWNER],
   },
   purchaseOrders: {
-    create: [Role.OWNER, Role.PURCHASING_OFFICER],
-    submit: [Role.OWNER, Role.PURCHASING_OFFICER],
-    approve: [Role.OWNER, Role.INVENTORY_MANAGER],
-    cancel: [Role.OWNER, Role.PURCHASING_OFFICER],
-    receive: [Role.OWNER, Role.INVENTORY_MANAGER, Role.STOREKEEPER],
+    create: [Role.OWNER],
+    submit: [Role.OWNER],
+    approve: [Role.OWNER],
+    cancel: [Role.OWNER],
+    receive: [Role.OWNER],
+    view: [Role.OWNER],
   },
   stockTransfers: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER, Role.STOREKEEPER],
+    view: [Role.OWNER],
+    manage: [Role.OWNER],
   },
   stockCounts: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER, Role.STOREKEEPER],
+    view: [Role.OWNER],
+    manage: [Role.OWNER],
+  },
+  stockMovements: {
+    view: [Role.OWNER],
   },
   tenants: {
+    view: [Role.OWNER],
     manage: [Role.OWNER],
   },
   users: {
     manage: [Role.OWNER],
   },
   activity: {
-    view: [Role.OWNER, Role.AUDITOR],
+    view: [Role.OWNER],
+  },
+  dashboard: {
+    view: [Role.OWNER],
   },
   reports: {
-    // Current/low/out-of-stock: operationally relevant to whoever handles
-    // physical stock, not just management/finance.
-    stockLevels: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR, Role.STOREKEEPER],
-    // Purchasing needs to see what's been bought before, not just approve it.
-    purchaseHistory: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR, Role.PURCHASING_OFFICER],
-    // Valuation and movement-velocity reports are financial/strategic —
-    // kept to the original management/audit set.
-    financial: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR],
+    // Current/low/out-of-stock: owner-only in the two-role model; there is
+    // no non-owner operational role left to extend it to.
+    stockLevels: [Role.OWNER],
+    // Purchase history is owner-only; there is no separate purchasing role
+    // to distinguish viewing from approving.
+    purchaseHistory: [Role.OWNER],
+    // Valuation and movement-velocity reports remain owner-only; there is
+    // no separate audit role to carve out here either.
+    financial: [Role.OWNER],
   },
   sales: {
     operate: [Role.OWNER, Role.CASHIER],
     return: [Role.OWNER, Role.CASHIER],
-    viewAll: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR],
+    viewAll: [Role.OWNER],
   },
   shifts: {
     operate: [Role.OWNER, Role.CASHIER],
     forceClose: [Role.OWNER],
-    viewAll: [Role.OWNER, Role.INVENTORY_MANAGER, Role.AUDITOR],
+    viewAll: [Role.OWNER],
   },
   customers: {
-    manage: [Role.OWNER, Role.INVENTORY_MANAGER, Role.CASHIER],
+    manage: [Role.OWNER, Role.CASHIER],
   },
 } as const;
 

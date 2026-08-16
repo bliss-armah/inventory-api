@@ -17,10 +17,6 @@ datasource db {
 
 enum Role {
   OWNER
-  INVENTORY_MANAGER
-  STOREKEEPER
-  PURCHASING_OFFICER
-  AUDITOR
   CASHIER
 }
 

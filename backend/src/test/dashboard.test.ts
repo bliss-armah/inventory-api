@@ -25,7 +25,7 @@ describe("dashboard", () => {
     await deleteTenant(tenant.tenant.id);
   });
 
-  it("never exposes costPrice to a cashier's GET /api/dashboard", async () => {
+  it("refuses a cashier's GET /api/dashboard outright, while an owner sees it", async () => {
     const location = await createLocation(tenant.tenant.id);
     const product = await createProduct(tenant.tenant.id);
     await seedStock(tenant.tenant.id, product.id, location.id, 20);
@@ -53,12 +53,17 @@ describe("dashboard", () => {
       });
     expect(saleRes.status).toBe(201);
 
-    const dashboardRes = await request(app)
+    const cashierRes = await request(app)
       .get("/api/dashboard")
       .set("Authorization", `Bearer ${token}`);
 
-    expect(dashboardRes.status).toBe(200);
-    expect(dashboardRes.body.data.recentStockMovements.length).toBeGreaterThan(0);
-    expect(JSON.stringify(dashboardRes.body)).not.toContain("costPrice");
+    expect(cashierRes.status).toBe(403);
+
+    const ownerRes = await request(app)
+      .get("/api/dashboard")
+      .set("Authorization", `Bearer ${tenant.token}`);
+
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.data.recentStockMovements.length).toBeGreaterThan(0);
   });
 });

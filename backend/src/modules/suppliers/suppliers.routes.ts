@@ -9,7 +9,8 @@ export const suppliersRoutes = Router();
 suppliersRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.suppliers.manage);
+const view = authorize(...PERMISSIONS.suppliers.view);
 
-suppliersRoutes.get("/", suppliersController.list);
+suppliersRoutes.get("/", view, suppliersController.list);
 suppliersRoutes.post("/", manage, suppliersController.create);
 suppliersRoutes.patch("/:id", manage, suppliersController.update);

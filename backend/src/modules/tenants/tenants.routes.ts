@@ -9,8 +9,9 @@ export const tenantsRoutes = Router();
 tenantsRoutes.use(authenticate);
 
 const manage = authorize(...PERMISSIONS.tenants.manage);
+const view = authorize(...PERMISSIONS.tenants.view);
 
-tenantsRoutes.get("/me", tenantsController.getCurrentTenant);
+tenantsRoutes.get("/me", view, tenantsController.getCurrentTenant);
 tenantsRoutes.patch("/me", manage, tenantsController.updateCurrentTenant);
-tenantsRoutes.get("/me/settings", tenantsController.getSettings);
+tenantsRoutes.get("/me/settings", view, tenantsController.getSettings);
 tenantsRoutes.patch("/me/settings", manage, tenantsController.updateSettings);
