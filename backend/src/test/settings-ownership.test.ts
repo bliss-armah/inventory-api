@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../app";
-import { createTenantWithOwner, deleteTenant, enablePos } from "./fixtures";
+import {
+  createTenantWithOwner,
+  createCashier,
+  tokenFor,
+  deleteTenant,
+  enablePos,
+} from "./fixtures";
 
 /**
  * Which features a business has is assigned by the platform operator when the
@@ -74,5 +80,63 @@ describe("an owner cannot provision their own entitlements", () => {
     // Compared numerically: the column is Decimal(5,2) and Prisma's string
     // form ("12.5" vs "12.50") is not what this test is about.
     expect(Number(res.body.data.maxDiscountPercent)).toBe(12.5);
+  });
+});
+
+/**
+ * The till prints the business name on every receipt but is forbidden from
+ * reading /tenants/me, so the name has to reach it through the settings payload
+ * — the one slice of the tenant record a cashier is trusted with.
+ */
+describe("the business name reaches the till through settings", () => {
+  let tenant: Awaited<ReturnType<typeof createTenantWithOwner>>;
+
+  beforeAll(async () => {
+    tenant = await createTenantWithOwner("Receipt Header Co");
+    await enablePos(tenant.tenant.id);
+  });
+
+  afterAll(async () => {
+    await deleteTenant(tenant.tenant.id);
+  });
+
+  it("returns businessName to a cashier who cannot read the tenant record", async () => {
+    const cashier = await createCashier(tenant.tenant.id);
+    const token = tokenFor(cashier);
+
+    const forbidden = await request(app)
+      .get("/api/tenants/me")
+      .set("Authorization", `Bearer ${token}`);
+    expect(forbidden.status).toBe(403);
+
+    const settings = await request(app)
+      .get("/api/tenants/me/settings")
+      .set("Authorization", `Bearer ${token}`);
+    expect(settings.status).toBe(200);
+    expect(settings.body.data.businessName).toBe(tenant.tenant.businessName);
+  });
+
+  it("does not leak the rest of the tenant record alongside it", async () => {
+    const cashier = await createCashier(tenant.tenant.id);
+
+    const res = await request(app)
+      .get("/api/tenants/me/settings")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`);
+
+    expect(res.body.data.subscriptionStatus).toBeUndefined();
+    expect(res.body.data.tenant).toBeUndefined();
+  });
+
+  it("tracks a rename", async () => {
+    await request(app)
+      .patch("/api/tenants/me")
+      .set("Authorization", `Bearer ${tenant.token}`)
+      .send({ businessName: "Renamed Receipt Co" })
+      .expect(200);
+
+    const res = await request(app)
+      .get("/api/tenants/me/settings")
+      .set("Authorization", `Bearer ${tenant.token}`);
+    expect(res.body.data.businessName).toBe("Renamed Receipt Co");
   });
 });

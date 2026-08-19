@@ -12,5 +12,9 @@ export default defineConfig({
     // test files in parallel workers risks cross-file interference on the
     // same DB, so keep it to one file at a time.
     fileParallelism: false,
+    // Fixture tenants used to outlive the run that made them, so the dev
+    // database grew by ~20 tenants every full suite. This deletes whatever
+    // createTenantWithOwner* made, after each test file.
+    setupFiles: ["src/test/setup.ts"],
   },
 });

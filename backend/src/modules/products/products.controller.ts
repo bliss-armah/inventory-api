@@ -42,6 +42,20 @@ export async function update(req: Request, res: Response) {
   ok(res, product);
 }
 
+export async function generateBarcode(req: Request, res: Response) {
+  const product = await productsService.generateBarcode(
+    req.auth!.tenantId,
+    requireParam(req, "id"),
+  );
+  await logActivity({
+    tenantId: req.auth!.tenantId,
+    userId: req.auth!.userId,
+    action: "PRODUCT_UPDATED",
+    description: `Barcode ${product.barcode} generated for "${product.name}" (${product.sku})`,
+  });
+  ok(res, product);
+}
+
 export async function getPriceHistory(req: Request, res: Response) {
   ok(
     res,

@@ -5,8 +5,9 @@
  * transfer between locations, adjustment, stock count).
  *
  * Deliberately separate from seed.ts, which stays a minimal bootstrap fit for
- * a real deployment (one platform admin, one tenant, one owner). Run that
- * first; this builds on top of the tenant it creates.
+ * a real deployment (one platform admin, nothing else — every real business is
+ * created from /platform/dashboard). This script owns the demo tenant end to
+ * end, creating it on first run, so it never has to be run in any order.
  *
  * Everything that changes stock quantities goes through the service layer
  * rather than raw inserts, so `Inventory.quantity` always equals the sum of
@@ -23,6 +24,8 @@
 // before lib/prisma.ts reads it. The SEED_* vars below aren't part of the
 // validated schema (nothing at runtime needs them), so they come from
 // process.env, which this populates.
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import "../src/config/env.ts";
 import { prisma } from "../src/lib/prisma.ts";
 import {
@@ -88,18 +91,66 @@ function log(step: string, detail: string) {
   console.log(`  ${step.padEnd(18)} ${detail}`);
 }
 
-/** Resolves the tenant seed.ts created, so this script never invents one. */
+/** Creates the demo tenant and its owner on first run, and reuses them after. */
 async function resolveTenant() {
   const email = (
     process.env.SEED_DEMO_OWNER_EMAIL || "owner@demo.local"
   ).toLowerCase();
+
   const owner = await prisma.user.findUnique({ where: { email } });
-  if (!owner) {
-    throw new Error(
-      `No demo tenant found for ${email}. Run \`npm run db:seed\` first — this script builds on the tenant it creates.`,
-    );
+  if (owner) {
+    log("tenant", `reusing ${email}`);
+    return { tenantId: owner.tenantId, ownerId: owner.id };
   }
-  return { tenantId: owner.tenantId, ownerId: owner.id };
+
+  const provided = process.env.SEED_DEMO_OWNER_PASSWORD;
+  const password =
+    provided && provided.length >= 8
+      ? provided
+      : randomBytes(9).toString("base64url");
+  const passwordHash = await bcrypt.hash(password, 12);
+  const businessName = process.env.SEED_DEMO_BUSINESS_NAME || "Demo Store";
+
+  const created = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.create({
+      data: {
+        businessName,
+        phone: "+233200000000",
+        email,
+        country: "Ghana",
+        timeZone: "Africa/Accra",
+      },
+    });
+    const createdOwner = await tx.user.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Demo Owner",
+        email,
+        passwordHash,
+        role: Role.OWNER,
+      },
+    });
+    await tx.location.create({
+      data: { tenantId: tenant.id, name: "Main Store", isDefault: true },
+    });
+    await tx.businessSettings.create({ data: { tenantId: tenant.id } });
+    return { tenantId: tenant.id, ownerId: createdOwner.id };
+  });
+
+  console.log("");
+  console.log("=========================================");
+  console.log(" Demo tenant created");
+  console.log("=========================================");
+  console.log(` Business: ${businessName}`);
+  console.log(` Email   : ${email}`);
+  console.log(` Password: ${password}`);
+  if (!provided || provided.length < 8) {
+    console.log(" (generated — set SEED_DEMO_OWNER_PASSWORD to choose one)");
+  }
+  console.log("=========================================");
+  console.log("");
+
+  return created;
 }
 
 async function ensureMultiLocation(tenantId: string, ownerId: string) {

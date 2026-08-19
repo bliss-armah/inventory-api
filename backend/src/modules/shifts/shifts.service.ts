@@ -11,19 +11,53 @@ import { roleAllowed, PERMISSIONS } from "../../shared/permissions.ts";
 import * as shiftsRepository from "./shifts.repository.ts";
 import type { CloseShiftInput, OpenShiftInput } from "./shifts.validators.ts";
 
+/**
+ * Which location a shift belongs to, without making the caller know. A single
+ * active location needs no decision at all, and a default one is an explicit
+ * statement of where the till normally sits — only a genuine ambiguity (several
+ * active locations, none marked default) is worth asking an owner about.
+ */
+async function resolveLocationId(
+  tenantId: string,
+  requested: string | undefined,
+): Promise<string> {
+  if (requested) {
+    await assertOwned(tenantId, { locationIds: [requested] });
+    return requested;
+  }
+
+  const locations = await shiftsRepository.findActiveLocations(tenantId);
+  if (locations.length === 0) {
+    throw new BadRequestError(
+      "This business has no active location to open a shift against",
+    );
+  }
+  if (locations.length === 1) {
+    return locations[0]!.id;
+  }
+
+  const preferred = locations.find((location) => location.isDefault);
+  if (!preferred) {
+    throw new BadRequestError("Pick a location to open this shift against", {
+      locationId: ["Pick a location to open this shift against"],
+    });
+  }
+  return preferred.id;
+}
+
 export async function open(
   tenantId: string,
   cashierId: string,
   input: OpenShiftInput,
 ) {
-  await assertOwned(tenantId, { locationIds: [input.locationId] });
+  const locationId = await resolveLocationId(tenantId, input.locationId);
 
   const shift = await withUniqueConstraint(
     () =>
       shiftsRepository.open(
         tenantId,
         cashierId,
-        input.locationId,
+        locationId,
         new Prisma.Decimal(input.openingFloat),
       ),
     { field: "shift", message: "You already have an open shift" },

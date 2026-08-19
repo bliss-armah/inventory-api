@@ -51,6 +51,14 @@ export function findByBarcodeInTenant(tenantId: string, barcode: string) {
   return prisma.product.findFirst({ where: { tenantId, barcode } });
 }
 
+export function setBarcode(tenantId: string, id: string, barcode: string) {
+  return prisma.product.update({
+    where: { id, tenantId },
+    data: { barcode },
+    include: { category: true, brand: true },
+  });
+}
+
 export function create(tenantId: string, input: CreateProductInput) {
   return prisma.product.create({ data: { tenantId, ...input } });
 }

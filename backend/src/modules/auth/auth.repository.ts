@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import { Role } from "../../generated/prisma/enums.ts";
+import { normalizePhone } from "../../lib/phone.ts";
 import type { Identifier } from "../../lib/identifier.ts";
 import type { EntitlementsInput } from "../tenants/tenants.validators.ts";
 
@@ -70,11 +71,22 @@ export function createTenantWithOwner(
       },
     });
 
+    // The business contact number doubles as the owner's login identifier and
+    // SMS destination, but only if no other account has claimed it — several
+    // businesses legitimately share one number, and users.phone is unique
+    // globally. A skipped claim just means that owner logs in by email.
+    const phone = normalizePhone(input.phone);
+    const phoneTaken = await tx.user.findUnique({
+      where: { phone },
+      select: { id: true },
+    });
+
     const owner = await tx.user.create({
       data: {
         tenantId: tenant.id,
         name: input.ownerName,
         email: input.email,
+        phone: phoneTaken ? null : phone,
         passwordHash,
         role: Role.OWNER,
       },

@@ -9,6 +9,7 @@ import {
 } from "../../lib/otp.ts";
 import { deliverOtp } from "../../lib/otp-delivery.ts";
 import { normalizePhone } from "../../lib/phone.ts";
+import type { Identifier } from "../../lib/identifier.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import {
   BadRequestError,
@@ -31,16 +32,41 @@ export type TwoFactorUser = {
   twoFactorChannel: OtpChannel | null;
 };
 
+type OtpTarget = { channel: OtpChannel; destination: string };
+
 /**
  * The destination a confirmed second factor points at. EMAIL always resolves
  * to the account's own address rather than a stored copy, so a change of email
  * can't leave codes going to the old one.
  */
-function confirmedDestination(user: TwoFactorUser): string | null {
+function confirmedDestination(user: TwoFactorUser): OtpTarget | null {
   if (!user.twoFactorConfirmedAt) return null;
-  if (user.twoFactorChannel === OtpChannel.EMAIL) return user.email;
-  if (user.twoFactorChannel === OtpChannel.SMS) return user.phone;
+  if (user.twoFactorChannel === OtpChannel.EMAIL) {
+    return { channel: OtpChannel.EMAIL, destination: user.email };
+  }
+  if (user.twoFactorChannel === OtpChannel.SMS && user.phone) {
+    return { channel: OtpChannel.SMS, destination: user.phone };
+  }
   return null;
+}
+
+/**
+ * The code goes back to whichever identifier was just used to log in: an email
+ * login is answered by email, a phone login by SMS. Both destinations are
+ * already proven at this point — findUserByIdentifier resolved the account
+ * *from* one of them — so there is nothing left for the user to type in.
+ */
+function identifierDestination(
+  user: TwoFactorUser,
+  via: Identifier | null | undefined,
+): OtpTarget | null {
+  if (!via) return null;
+  if (via.kind === "email") {
+    return { channel: OtpChannel.EMAIL, destination: user.email };
+  }
+  return user.phone
+    ? { channel: OtpChannel.SMS, destination: user.phone }
+    : null;
 }
 
 /** OWNER can't opt out — every other role is opt-in via twoFactorEnabled. */
@@ -80,14 +106,21 @@ async function sendOtpChallenge(
 /**
  * Called right after a password check succeeds for a user who needs 2FA
  * and has no valid remembered device. Issues the short-lived bearer token
- * for the rest of the flow, and — if the user already has a confirmed
- * channel — sends the login code immediately, so the client never has to
- * make a separate "please send me a code" call for the common case.
+ * for the rest of the flow and sends the login code immediately, so the
+ * client never has to make a separate "please send me a code" call.
+ *
+ * `via` is the identifier the login was made with and takes priority over any
+ * channel stored on the account: whichever one the user reached for is the one
+ * they have in front of them. It falls back to the confirmed channel only when
+ * there is no identifier to go on, which is every caller that isn't a login.
  *
  * `channel` comes back with `otp_required` so the client can tell the user
  * where to look without having to guess.
  */
-export async function beginTwoFactorFlow(user: TwoFactorUser): Promise<
+export async function beginTwoFactorFlow(
+  user: TwoFactorUser,
+  via?: Identifier | null,
+): Promise<
   | { status: "otp_required"; mfaToken: string; channel: OtpChannel }
   | { status: "setup_required"; mfaToken: string }
 > {
@@ -102,20 +135,17 @@ export async function beginTwoFactorFlow(user: TwoFactorUser): Promise<
     expiresAt,
   });
 
-  const destination = confirmedDestination(user);
-  if (destination && user.twoFactorChannel) {
+  const target =
+    identifierDestination(user, via) ?? confirmedDestination(user);
+  if (target) {
     await sendOtpChallenge(
       user.tenantId,
       user.id,
-      user.twoFactorChannel,
-      destination,
+      target.channel,
+      target.destination,
       OtpPurpose.LOGIN,
     );
-    return {
-      status: "otp_required",
-      mfaToken,
-      channel: user.twoFactorChannel,
-    };
+    return { status: "otp_required", mfaToken, channel: target.channel };
   }
 
   return { status: "setup_required", mfaToken };

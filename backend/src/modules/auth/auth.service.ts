@@ -1,6 +1,7 @@
 import ms from "ms";
-import { env, isProduction } from "../../config/env.ts";
+import { env } from "../../config/env.ts";
 import { signAccessToken } from "../../lib/jwt.ts";
+import { sendEmail } from "../../lib/email.ts";
 import {
   hashPassword,
   verifyPassword,
@@ -37,6 +38,7 @@ import type {
  * it was would turn the login endpoint into an account-enumeration oracle.
  */
 const INVALID_CREDENTIALS = "Invalid credentials";
+const PASSWORD_RESET_SUBJECT = "Reset your Inventory Manager password";
 
 function toAuthenticatedUser(user: {
   id: string;
@@ -123,20 +125,21 @@ export async function register(input: RegisterInput): Promise<LoginOutcome> {
     description: `${owner.name} registered ${tenant.businessName}`,
   });
 
-  // A brand-new business's owner is exactly the "OWNER with no 2FA set up
-  // yet" case — same forced-setup path as an existing owner encountering
-  // the mandatory-2FA rule for the first time.
-  const { mfaToken } = await twoFactorAuthService.beginTwoFactorFlow({
-    id: owner.id,
-    tenantId: owner.tenantId,
-    role: owner.role,
-    email: owner.email,
-    phone: null,
-    twoFactorEnabled: false,
-    twoFactorConfirmedAt: null,
-    twoFactorChannel: null,
-  });
-  return { status: "setup_required", mfaToken };
+  // Registration is an email-identified act, so the first login code goes to
+  // the address that was just used to register.
+  return twoFactorAuthService.beginTwoFactorFlow(
+    {
+      id: owner.id,
+      tenantId: owner.tenantId,
+      role: owner.role,
+      email: owner.email,
+      phone: owner.phone,
+      twoFactorEnabled: false,
+      twoFactorConfirmedAt: null,
+      twoFactorChannel: null,
+    },
+    { kind: "email", email: owner.email },
+  );
 }
 
 export async function login(
@@ -181,8 +184,7 @@ export async function login(
       : null;
 
     if (!rememberedDevice) {
-      const outcome = await twoFactorAuthService.beginTwoFactorFlow(user);
-      return outcome;
+      return twoFactorAuthService.beginTwoFactorFlow(user, identifier);
     }
 
     await twoFactorAuthService.slideRememberedDevice(rememberedDevice.id);
@@ -248,21 +250,27 @@ export async function forgotPassword(
   if (!user) return;
 
   const token = generateOpaqueToken();
+  const ttlMs = ms(env.PASSWORD_RESET_TOKEN_TTL as ms.StringValue);
   await authRepository.createPasswordResetToken({
     tenantId: user.tenantId,
     userId: user.id,
     tokenHash: hashOpaqueToken(token),
-    expiresAt: new Date(
-      Date.now() + ms(env.PASSWORD_RESET_TOKEN_TTL as ms.StringValue),
-    ),
+    expiresAt: new Date(Date.now() + ttlMs),
   });
 
-  // TODO: wire up an email/SMS provider. Until then, only log the raw token
-  // outside production — logging it in prod would leak a live credential
-  // into container logs/log aggregators, and the reset flow is unusable in
-  // prod anyway without a real delivery channel.
-  if (!isProduction) {
-    console.info(`Password reset requested for ${user.email}. Token: ${token}`);
+  // Only the hash is stored, so this is the one moment the raw token exists.
+  const link = `${env.FRONTEND_URL}/reset-password?token=${token}`;
+
+  try {
+    await sendEmail(
+      user.email,
+      PASSWORD_RESET_SUBJECT,
+      `Someone asked to reset the password for your Inventory Manager account. Set a new one here: ${link}\n\nThis link expires in ${ms(ttlMs, { long: true })} and can only be used once. If this wasn't you, ignore this email — your password stays unchanged.`,
+    );
+  } catch (error) {
+    console.error(
+      `Failed to send password reset email to ${user.email}: ${(error as Error).message}`,
+    );
   }
 }
 

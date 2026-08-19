@@ -5,7 +5,7 @@ import {
   NotFoundError,
 } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";
-import { withUniqueConstraint } from "../../shared/prisma-errors.ts";
+import { withUniqueConstraints } from "../../shared/prisma-errors.ts";
 import { Role } from "../../generated/prisma/enums.ts";
 import * as usersRepository from "./users.repository.ts";
 import * as authRepository from "../auth/auth.repository.ts";
@@ -25,12 +25,20 @@ export async function create(tenantId: string, input: CreateUserInput) {
     });
   }
   const passwordHash = await hashPassword(input.password);
-  return withUniqueConstraint(
+  return withUniqueConstraints(
     () => usersRepository.create(tenantId, input, passwordHash),
-    {
-      field: "email",
-      message: "An account with this email already exists",
-    },
+    [
+      {
+        field: "email",
+        message: "An account with this email already exists",
+        match: "email",
+      },
+      {
+        field: "phone",
+        message: "That phone number is already in use",
+        match: "phone",
+      },
+    ],
   );
 }
 
@@ -62,7 +70,10 @@ export async function update(
     }
   }
 
-  const updated = await usersRepository.update(tenantId, id, input);
+  const updated = await withUniqueConstraints(
+    () => usersRepository.update(tenantId, id, input),
+    [{ field: "phone", message: "That phone number is already in use" }],
+  );
 
   // Role/active-status changes must take effect immediately, not whenever
   // the user's current access token happens to expire — revoke their

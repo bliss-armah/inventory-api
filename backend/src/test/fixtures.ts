@@ -25,6 +25,19 @@ function unique(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
 }
 
+const trackedTenantIds = new Set<string>();
+
+export async function deleteTrackedTenants(): Promise<void> {
+  for (const tenantId of [...trackedTenantIds]) {
+    try {
+      await deleteTenant(tenantId);
+    } catch {
+      trackedTenantIds.delete(tenantId);
+    }
+  }
+  trackedTenantIds.clear();
+}
+
 export async function createTenantWithOwner(namePrefix = "Test Co") {
   const tenant = await prisma.tenant.create({
     data: {
@@ -36,6 +49,7 @@ export async function createTenantWithOwner(namePrefix = "Test Co") {
       subscriptionStatus: SubscriptionStatus.TRIALING,
     },
   });
+  trackedTenantIds.add(tenant.id);
 
   const user = await prisma.user.create({
     data: {
@@ -73,6 +87,7 @@ export async function createTenantWithOwnerAndPassword(namePrefix = "Test Co") {
       subscriptionStatus: SubscriptionStatus.TRIALING,
     },
   });
+  trackedTenantIds.add(tenant.id);
 
   const user = await prisma.user.create({
     data: {
@@ -149,6 +164,7 @@ export async function deleteTenant(tenantId: string) {
   await prisma.inventory.deleteMany({ where: { tenantId } });
   await prisma.product.deleteMany({ where: { tenantId } });
   await prisma.tenant.delete({ where: { id: tenantId } });
+  trackedTenantIds.delete(tenantId);
 }
 
 export function createCashier(tenantId: string, namePrefix = "Test Cashier") {

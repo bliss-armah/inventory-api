@@ -82,40 +82,49 @@ describe("two-factor authentication", () => {
     }
   });
 
-  it("forces a fresh OWNER through setup before granting a session", async () => {
+  it("emails a fresh OWNER a login code instead of demanding setup first", async () => {
     const { tenant, user } = await createTenantWithOwnerAndPassword();
     tenantIds.push(tenant.id);
 
+    // No confirmed channel and no phone on the account, yet the login still
+    // resolves to a destination: the address that was just typed in.
     const loginRes = await request(app)
       .post("/api/auth/login")
       .send({ identifier: user.email, password: TEST_PASSWORD });
     expect(loginRes.status).toBe(200);
-    expect(loginRes.body.data.status).toBe("setup_required");
-    const mfaToken = loginRes.body.data.mfaToken;
+    expect(loginRes.body.data.status).toBe("otp_required");
+    expect(loginRes.body.data.channel).toBe("EMAIL");
+    expect(sentEmails).toHaveLength(1);
+    expect(sentEmails.at(0)?.to).toBe(user.email);
+    expect(sentSms).toHaveLength(0);
 
-    const sendCodeRes = await request(app)
-      .post("/api/auth/2fa/setup/send-code")
-      .set("Authorization", `Bearer ${mfaToken}`)
-      .send({ channel: "SMS", phone: "+15550000001" });
-    expect(sendCodeRes.status).toBe(200);
+    const verifyRes = await request(app)
+      .post("/api/auth/2fa/verify")
+      .set("Authorization", `Bearer ${loginRes.body.data.mfaToken}`)
+      .send({ code: lastEmailCode(), rememberDevice: false });
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.data.accessToken).toBeTruthy();
+  });
+
+  it("routes the code by identifier, not by the channel stored on the account", async () => {
+    const { tenant, user } = await createTenantWithOwnerAndPassword();
+    tenantIds.push(tenant.id);
+    await enableSmsTwoFactor(user.id, "+15550000020");
+
+    // Confirmed channel is SMS, but this login came in over email.
+    const byEmail = await request(app)
+      .post("/api/auth/login")
+      .send({ identifier: user.email, password: TEST_PASSWORD });
+    expect(byEmail.body.data.channel).toBe("EMAIL");
+    expect(sentEmails).toHaveLength(1);
+    expect(sentSms).toHaveLength(0);
+
+    const byPhone = await request(app)
+      .post("/api/auth/login")
+      .send({ identifier: "+15550000020", password: TEST_PASSWORD });
+    expect(byPhone.body.data.channel).toBe("SMS");
     expect(sentSms).toHaveLength(1);
-    expect(sentSms.at(0)?.to).toBe("+15550000001");
-    expect(sentEmails).toHaveLength(0);
-
-    const confirmRes = await request(app)
-      .post("/api/auth/2fa/setup/confirm")
-      .set("Authorization", `Bearer ${mfaToken}`)
-      .send({ code: lastSmsCode() });
-    expect(confirmRes.status).toBe(200);
-    expect(confirmRes.body.data.status).toBe("success");
-    expect(confirmRes.body.data.accessToken).toBeTruthy();
-    expect(confirmRes.body.data.backupCodes).toHaveLength(10);
-
-    const updated = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(updated?.twoFactorEnabled).toBe(true);
-    expect(updated?.twoFactorConfirmedAt).not.toBeNull();
-    expect(updated?.phone).toBe("+15550000001");
-    expect(updated?.twoFactorChannel).toBe(OtpChannel.SMS);
+    expect(sentEmails).toHaveLength(1);
   });
 
   it("sets up over email without touching the phone number", async () => {
@@ -126,6 +135,7 @@ describe("two-factor authentication", () => {
       .post("/api/auth/login")
       .send({ identifier: user.email, password: TEST_PASSWORD });
     const mfaToken = loginRes.body.data.mfaToken;
+    sentEmails.length = 0;
 
     // No phone in the body at all — an email setup must use the account's own
     // address, not one the caller nominates.
@@ -148,15 +158,6 @@ describe("two-factor authentication", () => {
     const updated = await prisma.user.findUnique({ where: { id: user.id } });
     expect(updated?.twoFactorChannel).toBe(OtpChannel.EMAIL);
     expect(updated?.phone).toBeNull();
-
-    // A second login now emails the code, and says so.
-    const secondLoginRes = await request(app)
-      .post("/api/auth/login")
-      .send({ identifier: user.email, password: TEST_PASSWORD });
-    expect(secondLoginRes.body.data.status).toBe("otp_required");
-    expect(secondLoginRes.body.data.channel).toBe("EMAIL");
-    expect(sentEmails).toHaveLength(2);
-    expect(sentSms).toHaveLength(0);
   });
 
   it("logs in by phone number as well as by email", async () => {
@@ -226,7 +227,8 @@ describe("two-factor authentication", () => {
       .post("/api/auth/login")
       .send({ email: user.email, password: TEST_PASSWORD });
     expect(loginRes.status).toBe(200);
-    expect(loginRes.body.data.status).toBe("setup_required");
+    expect(loginRes.body.data.status).toBe("otp_required");
+    expect(loginRes.body.data.channel).toBe("EMAIL");
   });
 
   it("requires an OTP (not setup) once already configured, and locks out after 5 wrong attempts", async () => {
@@ -236,7 +238,7 @@ describe("two-factor authentication", () => {
 
     const loginRes = await request(app)
       .post("/api/auth/login")
-      .send({ identifier: user.email, password: TEST_PASSWORD });
+      .send({ identifier: "+15550000002", password: TEST_PASSWORD });
     expect(loginRes.body.data.status).toBe("otp_required");
     const mfaToken = loginRes.body.data.mfaToken;
     expect(sentSms).toHaveLength(1);
@@ -264,7 +266,7 @@ describe("two-factor authentication", () => {
 
     const loginRes = await request(app)
       .post("/api/auth/login")
-      .send({ identifier: user.email, password: TEST_PASSWORD });
+      .send({ identifier: "+15550000003", password: TEST_PASSWORD });
     const mfaToken = loginRes.body.data.mfaToken;
 
     const verifyRes = await request(app)
@@ -281,7 +283,7 @@ describe("two-factor authentication", () => {
     const secondLoginRes = await request(app)
       .post("/api/auth/login")
       .set("Cookie", `rememberDevice=${deviceCookie}`)
-      .send({ identifier: user.email, password: TEST_PASSWORD });
+      .send({ identifier: "+15550000003", password: TEST_PASSWORD });
     expect(secondLoginRes.status).toBe(200);
     expect(secondLoginRes.body.data.status).toBe("success");
     expect(secondLoginRes.body.data.accessToken).toBeTruthy();
@@ -374,7 +376,7 @@ describe("two-factor authentication", () => {
 
     const loginRes = await request(app)
       .post("/api/auth/login")
-      .send({ identifier: user.email, password: TEST_PASSWORD });
+      .send({ identifier: "+15550000006", password: TEST_PASSWORD });
     const mfaToken = loginRes.body.data.mfaToken;
     const verifyRes = await request(app)
       .post("/api/auth/2fa/verify")

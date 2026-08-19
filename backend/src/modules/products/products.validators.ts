@@ -3,7 +3,11 @@ import { ProductStatus } from "../../generated/prisma/enums.ts";
 
 export const createProductSchema = z.object({
   sku: z.string().trim().min(1).max(60),
-  barcode: z.string().trim().max(60).optional(),
+  barcode: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().trim().max(60).optional(),
+  ),
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(1000).optional(),
   categoryId: z.string().trim().optional(),

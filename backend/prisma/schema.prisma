@@ -481,8 +481,8 @@ model Product {
   saleReturnItems    SaleReturnItem[]
 
   @@unique([tenantId, sku])
+  @@unique([tenantId, barcode])
   @@index([tenantId])
-  @@index([tenantId, barcode])
   @@map("products")
 }
 

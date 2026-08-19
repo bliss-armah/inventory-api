@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../app";
 import { prisma } from "../lib/prisma";
+import { LocationStatus } from "../generated/prisma/enums";
 import {
   createTenantWithOwner,
   createLocation,
@@ -105,5 +106,146 @@ describe("shifts", () => {
       SELECT indexname FROM pg_indexes WHERE indexname = 'shifts_one_open_per_cashier'
     `;
     expect(rows).toHaveLength(1);
+  });
+});
+
+/**
+ * A cashier is forbidden from reading /locations (PERMISSIONS.locations.view is
+ * owner-only), so the till cannot name a location even when the business has
+ * exactly one. These cover the server resolving it instead — and the one case
+ * where it still has to ask.
+ */
+describe("opening a shift without naming a location", () => {
+  const tenantIds: string[] = [];
+
+  afterAll(async () => {
+    for (const id of tenantIds) {
+      await deleteTenant(id);
+    }
+  });
+
+  async function posTenant(namePrefix: string) {
+    const created = await createTenantWithOwner(namePrefix);
+    tenantIds.push(created.tenant.id);
+    await enablePos(created.tenant.id);
+    return created;
+  }
+
+  it("uses the only active location when there is just one", async () => {
+    const { tenant } = await posTenant("One Location Co");
+    const only = await createLocation(tenant.id, "Solo");
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ openingFloat: "120.00" });
+
+    expect(res.status).toBe(201);
+    const shift = await prisma.shift.findUnique({ where: { id: res.body.data.id } });
+    expect(shift?.locationId).toBe(only.id);
+  });
+
+  it("prefers the default location when several are active", async () => {
+    const { tenant } = await posTenant("Defaulted Co");
+    await createLocation(tenant.id, "Annex");
+    const main = await createLocation(tenant.id, "Flagship");
+    await prisma.location.update({
+      where: { id: main.id },
+      data: { isDefault: true },
+    });
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ openingFloat: "80.00" });
+
+    expect(res.status).toBe(201);
+    const shift = await prisma.shift.findUnique({ where: { id: res.body.data.id } });
+    expect(shift?.locationId).toBe(main.id);
+  });
+
+  it("asks for a location only when several are active and none is default", async () => {
+    const { tenant } = await posTenant("Ambiguous Co");
+    await createLocation(tenant.id, "North");
+    await createLocation(tenant.id, "South");
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ openingFloat: "60.00" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.locationId).toBeTruthy();
+  });
+
+  it("ignores inactive locations when resolving", async () => {
+    const { tenant } = await posTenant("Half Closed Co");
+    const live = await createLocation(tenant.id, "Open Branch");
+    const shut = await createLocation(tenant.id, "Shut Branch");
+    await prisma.location.update({
+      where: { id: shut.id },
+      data: { status: LocationStatus.INACTIVE },
+    });
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ openingFloat: "40.00" });
+
+    expect(res.status).toBe(201);
+    const shift = await prisma.shift.findUnique({ where: { id: res.body.data.id } });
+    expect(shift?.locationId).toBe(live.id);
+  });
+
+  it("rejects a shift when the business has no active location at all", async () => {
+    const { tenant } = await posTenant("No Location Co");
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ openingFloat: "20.00" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/no active location/i);
+  });
+
+  it("still honours a location an owner names explicitly", async () => {
+    const { tenant } = await posTenant("Owner Choice Co");
+    const main = await createLocation(tenant.id, "Main Pick");
+    const annex = await createLocation(tenant.id, "Annex Pick");
+    await prisma.location.update({
+      where: { id: main.id },
+      data: { isDefault: true },
+    });
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ locationId: annex.id, openingFloat: "30.00" });
+
+    expect(res.status).toBe(201);
+    const shift = await prisma.shift.findUnique({ where: { id: res.body.data.id } });
+    expect(shift?.locationId).toBe(annex.id);
+  });
+
+  it("refuses a location belonging to another business", async () => {
+    const { tenant } = await posTenant("Borrower Co");
+    await createLocation(tenant.id, "Own Branch");
+    const other = await posTenant("Lender Co");
+    const foreign = await createLocation(other.tenant.id, "Foreign Branch");
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ locationId: foreign.id, openingFloat: "30.00" });
+
+    expect(res.status).toBe(400);
   });
 });

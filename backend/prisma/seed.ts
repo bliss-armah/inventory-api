@@ -4,7 +4,6 @@ import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { env } from "../src/config/env.ts";
 import { PrismaClient } from "../src/generated/prisma/client.ts";
-import { Role } from "../src/generated/prisma/enums.ts";
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
@@ -69,65 +68,11 @@ async function seedPlatformAdmin() {
   );
 }
 
-async function seedDemoTenant() {
-  const email = (
-    process.env.SEED_DEMO_OWNER_EMAIL || "owner@demo.local"
-  ).toLowerCase();
-
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    console.log(
-      `Demo tenant owner already exists: ${email} (password left unchanged).`,
-    );
-    return;
-  }
-
-  const { password, generated } = resolvePassword(
-    process.env.SEED_DEMO_OWNER_PASSWORD,
-  );
-  const passwordHash = await bcrypt.hash(password, 12);
-  const businessName = process.env.SEED_DEMO_BUSINESS_NAME || "Demo Store";
-
-  const { tenant } = await prisma.$transaction(async (tx) => {
-    const tenant = await tx.tenant.create({
-      data: {
-        businessName,
-        phone: "+233200000000",
-        email,
-        country: "Ghana",
-        timeZone: "Africa/Accra",
-      },
-    });
-    const owner = await tx.user.create({
-      data: {
-        tenantId: tenant.id,
-        name: "Demo Owner",
-        email,
-        passwordHash,
-        role: Role.OWNER,
-      },
-    });
-    await tx.location.create({
-      data: { tenantId: tenant.id, name: "Main Store", isDefault: true },
-    });
-    await tx.businessSettings.create({ data: { tenantId: tenant.id } });
-    return { tenant, owner };
-  });
-
-  printCredentials(
-    "Demo tenant created",
-    [
-      ["Business", tenant.businessName],
-      ["Email   ", email],
-      ["Password", password],
-    ],
-    generated,
-  );
-}
-
 async function main() {
   await seedPlatformAdmin();
-  await seedDemoTenant();
+  console.log(
+    "Sign in at /platform/login to create businesses and invite their owners.",
+  );
 }
 
 main()
