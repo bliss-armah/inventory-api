@@ -56,6 +56,19 @@ export async function generateBarcode(req: Request, res: Response) {
   ok(res, product);
 }
 
+export async function generateMissingBarcodes(req: Request, res: Response) {
+  const result = await productsService.generateMissingBarcodes(req.auth!.tenantId);
+  if (result.generated > 0) {
+    await logActivity({
+      tenantId: req.auth!.tenantId,
+      userId: req.auth!.userId,
+      action: "PRODUCT_UPDATED",
+      description: `Generated barcodes for ${result.generated} product(s) that had none`,
+    });
+  }
+  ok(res, result);
+}
+
 export async function getPriceHistory(req: Request, res: Response) {
   ok(
     res,

@@ -32,13 +32,25 @@ export function list(tenantId: string, rawQuery: unknown) {
   );
 }
 
+async function allocateBarcode(tenantId: string): Promise<string> {
+  for (let attempt = 0; attempt < BARCODE_ATTEMPTS; attempt += 1) {
+    const barcode = generateEan13();
+    const taken = await productsRepository.findByBarcodeInTenant(tenantId, barcode);
+    if (!taken) {
+      return barcode;
+    }
+  }
+  throw new ConflictError("Could not allocate a unique barcode. Please try again.");
+}
+
 export async function create(tenantId: string, input: CreateProductInput) {
   await assertOwned(tenantId, {
     categoryIds: input.categoryId ? [input.categoryId] : undefined,
     brandIds: input.brandId ? [input.brandId] : undefined,
   });
+  const barcode = input.barcode ?? (await allocateBarcode(tenantId));
   return withUniqueConstraints(
-    () => productsRepository.create(tenantId, input),
+    () => productsRepository.create(tenantId, { ...input, barcode }),
     PRODUCT_CONFLICTS,
   );
 }
@@ -95,10 +107,7 @@ export async function generateBarcode(tenantId: string, id: string) {
   }
 
   for (let attempt = 0; attempt < BARCODE_ATTEMPTS; attempt += 1) {
-    const barcode = generateEan13();
-    const taken = await productsRepository.findByBarcodeInTenant(tenantId, barcode);
-    if (taken) continue;
-
+    const barcode = await allocateBarcode(tenantId);
     try {
       return await productsRepository.setBarcode(tenantId, id, barcode);
     } catch (error) {
@@ -108,6 +117,27 @@ export async function generateBarcode(tenantId: string, id: string) {
   }
 
   throw new ConflictError("Could not allocate a unique barcode. Please try again.");
+}
+
+export async function generateMissingBarcodes(tenantId: string) {
+  const pending = await productsRepository.listMissingBarcode(tenantId);
+  let generated = 0;
+
+  for (const product of pending) {
+    for (let attempt = 0; attempt < BARCODE_ATTEMPTS; attempt += 1) {
+      const barcode = await allocateBarcode(tenantId);
+      try {
+        await productsRepository.setBarcode(tenantId, product.id, barcode);
+        generated += 1;
+        break;
+      } catch (error) {
+        if (isUniqueViolation(error)) continue;
+        throw error;
+      }
+    }
+  }
+
+  return { generated, skipped: pending.length - generated };
 }
 
 export async function findOne(tenantId: string, id: string) {

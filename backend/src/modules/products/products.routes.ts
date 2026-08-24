@@ -16,4 +16,9 @@ productsRoutes.get("/:id", view, productsController.getOne);
 productsRoutes.get("/:id/price-history", view, productsController.getPriceHistory);
 productsRoutes.post("/", manage, productsController.create);
 productsRoutes.patch("/:id", manage, productsController.update);
+productsRoutes.post(
+  "/barcodes/generate-missing",
+  manage,
+  productsController.generateMissingBarcodes,
+);
 productsRoutes.post("/:id/barcode", manage, productsController.generateBarcode);

@@ -47,10 +47,14 @@ describe("EAN-13 generation", () => {
 });
 
 describe("POST /api/products/:id/barcode", () => {
-  it("assigns a scannable barcode to a product that has none", async () => {
+  it("assigns a scannable barcode to a product whose barcode was cleared", async () => {
     const { token } = await createTenantWithOwner("Barcode Co");
     const created = await createProduct(token);
     expect(created.status).toBe(201);
+    await prisma.product.update({
+      where: { id: created.body.data.id },
+      data: { barcode: null },
+    });
 
     const res = await request(app)
       .post(`/api/products/${created.body.data.id}/barcode`)
@@ -133,5 +137,109 @@ describe("barcode uniqueness", () => {
 
     const blanks = await prisma.product.count({ where: { barcode: "" } });
     expect(blanks).toBe(0);
+  });
+});
+
+describe("every product gets a barcode without anyone asking", () => {
+  it("assigns one at creation when none was supplied", async () => {
+    const { token } = await createTenantWithOwner("Auto Barcode Co");
+
+    const created = await createProduct(token);
+
+    expect(created.status).toBe(201);
+    expect(isValidEan13(created.body.data.barcode)).toBe(true);
+    expect(created.body.data.barcode.startsWith("20")).toBe(true);
+  });
+
+  it("keeps a manufacturer barcode the caller supplied", async () => {
+    const { token } = await createTenantWithOwner("Auto Barcode Co");
+
+    const created = await createProduct(token, { barcode: "4006381333931" });
+
+    expect(created.body.data.barcode).toBe("4006381333931");
+  });
+
+  it("treats a blank barcode as absent and generates one anyway", async () => {
+    const { token } = await createTenantWithOwner("Auto Barcode Co");
+
+    const created = await createProduct(token, { barcode: "   " });
+
+    expect(created.status).toBe(201);
+    expect(isValidEan13(created.body.data.barcode)).toBe(true);
+  });
+
+  it("gives every product a distinct barcode", async () => {
+    const { token } = await createTenantWithOwner("Auto Barcode Co");
+
+    const codes = new Set<string>();
+    for (let index = 0; index < 8; index += 1) {
+      codes.add((await createProduct(token)).body.data.barcode);
+    }
+
+    expect(codes.size).toBe(8);
+  });
+});
+
+describe("POST /api/products/barcodes/generate-missing", () => {
+  it("fills only the products that have none, and reports how many", async () => {
+    const { tenant, token } = await createTenantWithOwner("Backfill Co");
+    const kept = await createProduct(token, { barcode: "4006381333931" });
+    const blanked = [
+      (await createProduct(token)).body.data.id,
+      (await createProduct(token)).body.data.id,
+      (await createProduct(token)).body.data.id,
+    ];
+    await prisma.product.updateMany({
+      where: { id: { in: blanked } },
+      data: { barcode: null },
+    });
+
+    const res = await request(app)
+      .post("/api/products/barcodes/generate-missing")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.generated).toBe(3);
+
+    const remaining = await prisma.product.count({
+      where: { tenantId: tenant.id, barcode: null },
+    });
+    expect(remaining).toBe(0);
+
+    const untouched = await prisma.product.findUnique({
+      where: { id: kept.body.data.id },
+    });
+    expect(untouched?.barcode).toBe("4006381333931");
+  });
+
+  it("is a no-op when nothing is missing", async () => {
+    const { token } = await createTenantWithOwner("Backfill Co");
+    await createProduct(token);
+
+    const res = await request(app)
+      .post("/api/products/barcodes/generate-missing")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.generated).toBe(0);
+  });
+
+  it("leaves another tenant's products alone", async () => {
+    const mine = await createTenantWithOwner("Backfill Mine");
+    const theirs = await createTenantWithOwner("Backfill Theirs");
+    const theirProduct = (await createProduct(theirs.token)).body.data.id;
+    await prisma.product.update({
+      where: { id: theirProduct },
+      data: { barcode: null },
+    });
+    await createProduct(mine.token);
+
+    await request(app)
+      .post("/api/products/barcodes/generate-missing")
+      .set("Authorization", `Bearer ${mine.token}`)
+      .expect(200);
+
+    const stillNull = await prisma.product.findUnique({ where: { id: theirProduct } });
+    expect(stillNull?.barcode).toBeNull();
   });
 });
