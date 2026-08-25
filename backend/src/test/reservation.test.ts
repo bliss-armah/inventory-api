@@ -10,7 +10,7 @@ import { createTenantWithOwner, createLocation, createProduct, deleteTenant } fr
  * transfer — before this one actually dispatches. This suite exercises the
  * full lifecycle of that guarantee end to end via real HTTP requests.
  */
-describe("stock transfer reservations", () => {
+describe("stock transfer reservations", { retry: 0 }, () => {
   let tenant: Awaited<ReturnType<typeof createTenantWithOwner>>;
   let fromLocation: Awaited<ReturnType<typeof createLocation>>;
   let toLocation: Awaited<ReturnType<typeof createLocation>>;

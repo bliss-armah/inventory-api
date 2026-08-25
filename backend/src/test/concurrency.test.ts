@@ -13,7 +13,7 @@ import { createTenantWithOwner, createLocation, createProduct, deleteTenant } fr
  * state matches what serialized execution would produce, with no lost
  * updates and no over-application past a hard limit.
  */
-describe("concurrency: locking serializes concurrent writers", () => {
+describe("concurrency: locking serializes concurrent writers", { retry: 0 }, () => {
   let tenant: Awaited<ReturnType<typeof createTenantWithOwner>>;
 
   beforeAll(async () => {

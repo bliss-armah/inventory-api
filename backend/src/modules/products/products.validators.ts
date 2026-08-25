@@ -29,6 +29,30 @@ export const productFilterSchema = z.object({
   status: z.enum(ProductStatus).optional(),
 });
 
+export const bulkUpdateProductsSchema = z
+  .object({
+    productIds: z.array(z.string().trim().min(1)).min(1).max(500),
+    status: z.enum(ProductStatus).optional(),
+    categoryId: z.string().trim().min(1).nullish(),
+    brandId: z.string().trim().min(1).nullish(),
+    priceChange: z
+      .object({
+        field: z.enum(["costPrice", "sellingPrice"]),
+        mode: z.enum(["set", "increaseByPercent", "decreaseByPercent"]),
+        value: z.coerce.number().nonnegative(),
+      })
+      .optional(),
+  })
+  .refine(
+    (value) =>
+      value.status !== undefined ||
+      value.categoryId !== undefined ||
+      value.brandId !== undefined ||
+      value.priceChange !== undefined,
+    { message: "Provide at least one change to apply" },
+  );
+
+export type BulkUpdateProductsInput = z.infer<typeof bulkUpdateProductsSchema>;
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 export type ProductFilter = z.infer<typeof productFilterSchema>;

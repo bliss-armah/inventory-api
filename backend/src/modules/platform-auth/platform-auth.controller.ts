@@ -1,10 +1,15 @@
 import type { Request, Response } from "express";
 import ms from "ms";
 import { env, isProduction } from "../../config/env";
-import { ok } from "../../shared/api-response";
+import { created, ok } from "../../shared/api-response";
 import { UnauthorizedError } from "../../shared/errors";
 import * as platformAuthService from "./platform-auth.service";
-import { platformLoginSchema } from "./platform-auth.validators";
+import {
+  createPlatformAdminSchema,
+  platformForgotPasswordSchema,
+  platformLoginSchema,
+  platformResetPasswordSchema,
+} from "./platform-auth.validators";
 
 const REFRESH_COOKIE_NAME = "platformRefreshToken";
 const REFRESH_COOKIE_PATH = "/api/platform/auth";
@@ -51,4 +56,25 @@ export async function logout(req: Request, res: Response) {
 
 export async function me(req: Request, res: Response) {
   ok(res, await platformAuthService.me(req.platformAdmin!.id));
+}
+
+export async function forgotPassword(req: Request, res: Response) {
+  const input = platformForgotPasswordSchema.parse(req.body);
+  await platformAuthService.forgotPassword(input);
+  ok(res, null, "If that email has a platform account, a reset link is on its way.");
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const input = platformResetPasswordSchema.parse(req.body);
+  await platformAuthService.resetPassword(input);
+  ok(res, null, "Password updated. Sign in with your new password.");
+}
+
+export async function createAdmin(req: Request, res: Response) {
+  const input = createPlatformAdminSchema.parse(req.body);
+  created(res, await platformAuthService.createAdmin(input));
+}
+
+export async function listAdmins(_req: Request, res: Response) {
+  ok(res, await platformAuthService.listAdmins());
 }

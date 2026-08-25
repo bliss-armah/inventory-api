@@ -3,7 +3,11 @@ import { created, ok } from "../../shared/api-response";
 import { logActivity } from "../../lib/activity-logger";
 import { requireParam } from "../../shared/params";
 import * as productsService from "./products.service";
-import { createProductSchema, updateProductSchema } from "./products.validators";
+import {
+  bulkUpdateProductsSchema,
+  createProductSchema,
+  updateProductSchema,
+} from "./products.validators";
 
 export async function list(req: Request, res: Response) {
   ok(res, await productsService.list(req.auth!.tenantId, req.query));
@@ -74,4 +78,45 @@ export async function getPriceHistory(req: Request, res: Response) {
     res,
     await productsService.getPriceHistory(req.auth!.tenantId, requireParam(req, "id"), req.query),
   );
+}
+
+export async function exportCsv(req: Request, res: Response) {
+  const csv = await productsService.exportCsv(req.auth!.tenantId);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="products.csv"');
+  res.send(csv);
+}
+
+export async function importCsv(req: Request, res: Response) {
+  const body = typeof req.body === "string" ? req.body : "";
+  const summary = await productsService.importCsv(
+    req.auth!.tenantId,
+    req.auth!.userId,
+    body,
+  );
+  if (summary.created > 0 || summary.updated > 0) {
+    await logActivity({
+      tenantId: req.auth!.tenantId,
+      userId: req.auth!.userId,
+      action: "PRODUCT_UPDATED",
+      description: `CSV import: ${summary.created} created, ${summary.updated} updated, ${summary.failed} failed`,
+    });
+  }
+  ok(res, summary);
+}
+
+export async function bulkUpdate(req: Request, res: Response) {
+  const input = bulkUpdateProductsSchema.parse(req.body);
+  const result = await productsService.bulkUpdate(
+    req.auth!.tenantId,
+    req.auth!.userId,
+    input,
+  );
+  await logActivity({
+    tenantId: req.auth!.tenantId,
+    userId: req.auth!.userId,
+    action: "PRODUCT_UPDATED",
+    description: `Bulk update applied to ${result.updated} product(s)`,
+  });
+  ok(res, result);
 }

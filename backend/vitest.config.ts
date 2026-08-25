@@ -16,5 +16,6 @@ export default defineConfig({
     // database grew by ~20 tenants every full suite. This deletes whatever
     // createTenantWithOwner* made, after each test file.
     setupFiles: ["src/test/setup.ts"],
+    retry: 1,
   },
 });

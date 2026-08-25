@@ -3,7 +3,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.ts";
 import { env } from "../config/env.ts";
 
-const pool = new Pool({ connectionString: env.DATABASE_URL, max: 25 });
+const pool = new Pool({
+  connectionString: env.DATABASE_URL,
+  max: env.NODE_ENV === "test" ? 5 : 25,
+});
 const adapter = new PrismaPg(pool);
 
 export const prisma = new PrismaClient({

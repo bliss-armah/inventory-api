@@ -13,7 +13,7 @@ import {
 // plaintext password is never needed and paying bcrypt's cost per fixture
 // would just slow the suite down for no benefit.
 const DUMMY_PASSWORD_HASH =
-  "$2b$12$yzTYF9/dHlYsg2qkFGZ1wO6Rfhq3u24J4GOtT/D5PJPieZn0I/i4S";
+  "$2b$04$ESvGJiIzDZbk8fjDz861hOaUOcLG7GfbV5iuTW2E7ykeNGfC/Mbla";
 
 /** The real, known plaintext behind createTenantWithRealPassword/createUserWithRealPassword. */
 export const TEST_PASSWORD = "TestPassword123!";
@@ -194,6 +194,9 @@ export async function createPlatformAdmin(namePrefix = "Test Platform Admin") {
 
 export async function deletePlatformAdmin(id: string) {
   await prisma.platformAdminRefreshToken.deleteMany({
+    where: { platformAdminId: id },
+  });
+  await prisma.platformAdminPasswordResetToken.deleteMany({
     where: { platformAdminId: id },
   });
   await prisma.platformAdmin.delete({ where: { id } });

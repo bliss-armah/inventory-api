@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma.ts";
+import type { ProductStatus } from "../../generated/prisma/enums.ts";
 import type { Prisma } from "../../generated/prisma/client.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
 import type {
@@ -65,6 +66,34 @@ export function setBarcode(tenantId: string, id: string, barcode: string) {
     data: { barcode },
     include: { category: true, brand: true },
   });
+}
+
+export function listAllForExport(tenantId: string) {
+  return prisma.product.findMany({
+    where: { tenantId },
+    include: { category: true, brand: true },
+    orderBy: { sku: "asc" },
+  });
+}
+
+export function findBySkuInTenant(tenantId: string, sku: string) {
+  return prisma.product.findFirst({ where: { tenantId, sku } });
+}
+
+export function listCategoriesForTenant(tenantId: string) {
+  return prisma.category.findMany({ where: { tenantId }, select: { id: true, name: true } });
+}
+
+export function listBrandsForTenant(tenantId: string) {
+  return prisma.brand.findMany({ where: { tenantId }, select: { id: true, name: true } });
+}
+
+export function updateManyFields(
+  tenantId: string,
+  ids: string[],
+  data: { status?: ProductStatus; categoryId?: string | null; brandId?: string | null },
+) {
+  return prisma.product.updateMany({ where: { tenantId, id: { in: ids } }, data });
 }
 
 export function create(tenantId: string, input: CreateProductInput) {
