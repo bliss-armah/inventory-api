@@ -5,7 +5,7 @@ import type { EntitlementsInput } from "./platform-tenants.validators.ts";
 // Shared by list() and findById(), so the platform dashboard can show what
 // each business is provisioned for without a second round trip per row.
 const include = {
-  _count: { select: { users: true, locations: true, products: true } },
+  _count: { select: { memberships: true, locations: true, products: true } },
   // `settings` is the relation field on Tenant; `businessSettings` is only the
   // model accessor on the Prisma client. Using the latter here is a runtime
   // error that the generated include types do not catch.
@@ -46,9 +46,15 @@ export function findById(id: string) {
     where: { id },
     include: {
       ...include,
-      users: {
+      // The owners of this business, reached through memberships — `role` and
+      // `isActive` describe the seat here, not the person, so both come off
+      // the membership while name and email come off the identity.
+      memberships: {
         where: { role: "OWNER" },
-        select: { id: true, name: true, email: true, isActive: true },
+        select: {
+          isActive: true,
+          user: { select: { id: true, name: true, email: true } },
+        },
       },
     },
   });

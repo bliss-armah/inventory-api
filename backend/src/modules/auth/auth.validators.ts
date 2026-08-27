@@ -38,6 +38,21 @@ export const forgotPasswordSchema = z.object({
   email: z.email().toLowerCase(),
 });
 
+export const selectBusinessSchema = z.object({
+  tenantId: z.string().min(1),
+});
+
+/**
+ * `name` is only read when the invited address has no account yet — for one
+ * that does, the name already on the identity wins, because an owner in one
+ * business has no business renaming a person in another.
+ */
+export const acceptInviteSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8).max(72),
+  name: z.string().trim().min(2).max(120).optional(),
+});
+
 export const resetPasswordSchema = z.object({
   token: z.string().min(1),
   password: z.string().min(8).max(72),
@@ -47,3 +62,5 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type SelectBusinessInput = z.infer<typeof selectBusinessSchema>;
+export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;

@@ -12,7 +12,6 @@ import {
 } from "../src/generated/prisma";
 import * as tenantsService from "../src/modules/tenants/tenants.service.ts";
 import * as locationsService from "../src/modules/locations/locations.service.ts";
-import * as usersService from "../src/modules/users/users.service.ts";
 import * as categoriesService from "../src/modules/categories/categories.service.ts";
 import * as brandsService from "../src/modules/brands/brands.service.ts";
 import * as suppliersService from "../src/modules/suppliers/suppliers.service.ts";
@@ -72,10 +71,14 @@ async function resolveTenant() {
     process.env.SEED_DEMO_OWNER_EMAIL || "owner@demo.local"
   ).toLowerCase();
 
-  const owner = await prisma.user.findUnique({ where: { email } });
-  if (owner) {
+  const owner = await prisma.user.findUnique({
+    where: { email },
+    include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } },
+  });
+  const existingMembership = owner?.memberships[0];
+  if (owner && existingMembership) {
     log("tenant", `reusing ${email}`);
-    return { tenantId: owner.tenantId, ownerId: owner.id };
+    return { tenantId: existingMembership.tenantId, ownerId: owner.id };
   }
 
   const provided = process.env.SEED_DEMO_OWNER_PASSWORD;
@@ -97,11 +100,12 @@ async function resolveTenant() {
       },
     });
     const createdOwner = await tx.user.create({
+      data: { name: "Demo Owner", email, passwordHash },
+    });
+    await tx.membership.create({
       data: {
+        userId: createdOwner.id,
         tenantId: tenant.id,
-        name: "Demo Owner",
-        email,
-        passwordHash,
         role: Role.OWNER,
       },
     });
@@ -175,14 +179,38 @@ async function ensureLocations(tenantId: string, ownerId: string) {
   return { main, warehouse };
 }
 
+/**
+ * Seeds staff directly rather than through the invitation flow: an invite
+ * needs a human to click a link and choose a password, which a seed script
+ * has nobody to ask. It creates the same end state — an identity plus a
+ * membership in this tenant — so the demo data is what accepting would have
+ * produced, with a known shared password.
+ */
 async function ensureStaff(tenantId: string) {
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
   let created = 0;
   for (const member of STAFF) {
     const existing = await prisma.user.findUnique({
       where: { email: member.email },
     });
-    if (existing) continue;
-    await usersService.create(tenantId, { ...member, password: DEMO_PASSWORD });
+    if (existing) {
+      // The identity may exist from an earlier seed against another tenant;
+      // make sure it can reach this one.
+      await prisma.membership.upsert({
+        where: {
+          userId_tenantId: { userId: existing.id, tenantId },
+        },
+        create: { userId: existing.id, tenantId, role: member.role },
+        update: {},
+      });
+      continue;
+    }
+    const user = await prisma.user.create({
+      data: { name: member.name, email: member.email, passwordHash },
+    });
+    await prisma.membership.create({
+      data: { userId: user.id, tenantId, role: member.role },
+    });
     created += 1;
   }
   log("staff", `${created} created, ${STAFF.length - created} already present`);
@@ -471,7 +499,7 @@ async function summarize(tenantId: string) {
     inventory, movements, orders, receipts, adjustments, transfers, counts,
   ] = await Promise.all([
     prisma.location.count({ where: { tenantId } }),
-    prisma.user.count({ where: { tenantId } }),
+    prisma.membership.count({ where: { tenantId } }),
     prisma.category.count({ where: { tenantId } }),
     prisma.brand.count({ where: { tenantId } }),
     prisma.supplier.count({ where: { tenantId } }),

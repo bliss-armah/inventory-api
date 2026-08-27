@@ -26,6 +26,37 @@ function unique(prefix: string): string {
 }
 
 const trackedTenantIds = new Set<string>();
+// Identities are no longer owned by a tenant, so deleting one doesn't take its
+// people with it. Tracking every fixture-created user lets the end-of-file
+// sweep catch anyone whose last membership went away in a different order than
+// deleteTenant's own per-call check could see.
+const trackedUserIds = new Set<string>();
+
+/**
+ * Creates an identity plus its membership and flattens the two back into the
+ * single object the tests already pass around — `tenantId` and `role` now live
+ * on the membership, but every call site means "this person, in this business,
+ * with this role", which is exactly what this shape is.
+ */
+async function createMember(
+  tenantId: string,
+  role: Role,
+  name: string,
+  passwordHash: string,
+) {
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email: `${unique("user")}@example.test`,
+      passwordHash,
+    },
+  });
+  const membership = await prisma.membership.create({
+    data: { userId: user.id, tenantId, role },
+  });
+  trackedUserIds.add(user.id);
+  return { ...user, tenantId, role, membershipId: membership.id };
+}
 
 export async function deleteTrackedTenants(): Promise<void> {
   for (const tenantId of [...trackedTenantIds]) {
@@ -36,6 +67,23 @@ export async function deleteTrackedTenants(): Promise<void> {
     }
   }
   trackedTenantIds.clear();
+  await deleteOrphanedFixtureUsers();
+}
+
+/**
+ * The final sweep. deleteTenant drops anyone left with no memberships at all,
+ * but only among that tenant's own members — a fixture user who was still
+ * attached elsewhere at the time survives it, and nothing later goes looking
+ * for them. This does.
+ */
+async function deleteOrphanedFixtureUsers(): Promise<void> {
+  for (const userId of [...trackedUserIds]) {
+    const remaining = await prisma.membership.count({ where: { userId } });
+    if (remaining === 0) {
+      await prisma.user.delete({ where: { id: userId } }).catch(() => null);
+    }
+  }
+  trackedUserIds.clear();
 }
 
 export async function createTenantWithOwner(namePrefix = "Test Co") {
@@ -51,15 +99,12 @@ export async function createTenantWithOwner(namePrefix = "Test Co") {
   });
   trackedTenantIds.add(tenant.id);
 
-  const user = await prisma.user.create({
-    data: {
-      tenantId: tenant.id,
-      name: "Test Owner",
-      email: `${unique("user")}@example.test`,
-      passwordHash: DUMMY_PASSWORD_HASH,
-      role: Role.OWNER,
-    },
-  });
+  const user = await createMember(
+    tenant.id,
+    Role.OWNER,
+    "Test Owner",
+    DUMMY_PASSWORD_HASH,
+  );
 
   const token = signAccessToken({
     sub: user.id,
@@ -89,15 +134,12 @@ export async function createTenantWithOwnerAndPassword(namePrefix = "Test Co") {
   });
   trackedTenantIds.add(tenant.id);
 
-  const user = await prisma.user.create({
-    data: {
-      tenantId: tenant.id,
-      name: "Test Owner",
-      email: `${unique("user")}@example.test`,
-      passwordHash,
-      role: Role.OWNER,
-    },
-  });
+  const user = await createMember(
+    tenant.id,
+    Role.OWNER,
+    "Test Owner",
+    passwordHash,
+  );
 
   return { tenant, user };
 }
@@ -108,16 +150,7 @@ export async function createUserWithPassword(
   namePrefix = "Test User",
 ) {
   const passwordHash = await hashPassword(TEST_PASSWORD);
-  const user = await prisma.user.create({
-    data: {
-      tenantId,
-      name: namePrefix,
-      email: `${unique("user")}@example.test`,
-      passwordHash,
-      role,
-    },
-  });
-  return user;
+  return createMember(tenantId, role, namePrefix, passwordHash);
 }
 
 export function createLocation(tenantId: string, name = "Main") {
@@ -163,7 +196,27 @@ export async function deleteTenant(tenantId: string) {
   await prisma.stockMovement.deleteMany({ where: { tenantId } });
   await prisma.inventory.deleteMany({ where: { tenantId } });
   await prisma.product.deleteMany({ where: { tenantId } });
+
+  // Identities outlive tenants now, so deleting the tenant cascades the
+  // memberships but leaves the people behind. Collect them first, then drop
+  // the ones who no longer belong to any business — a fixture user shared with
+  // another tenant (which is exactly what the cross-tenant tests set up) has
+  // to survive this.
+  const memberIds = (
+    await prisma.membership.findMany({
+      where: { tenantId },
+      select: { userId: true },
+    })
+  ).map((membership) => membership.userId);
+
   await prisma.tenant.delete({ where: { id: tenantId } });
+
+  for (const userId of memberIds) {
+    const remaining = await prisma.membership.count({ where: { userId } });
+    if (remaining === 0) {
+      await prisma.user.delete({ where: { id: userId } }).catch(() => null);
+    }
+  }
   trackedTenantIds.delete(tenantId);
 }
 

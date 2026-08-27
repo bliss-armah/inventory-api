@@ -76,6 +76,9 @@ const envSchema = z.object({
   OTP_CODE_TTL: z.string().default("10m"),
   PENDING_TWO_FACTOR_AUTH_TTL: z.string().default("10m"),
   REMEMBERED_DEVICE_TTL: z.string().default("30d"),
+  // Long by comparison with the other opaque tokens because the recipient is a
+  // person who has to find the email, not a client mid-handshake.
+  STAFF_INVITE_TTL: z.string().default("7d"),
 });
 
 const parsed = envSchema.safeParse(process.env);

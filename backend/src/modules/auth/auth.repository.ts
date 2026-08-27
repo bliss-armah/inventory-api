@@ -19,18 +19,16 @@ type TenantWithOwnerInput = {
   timeZone: string;
 };
 
-const withTenantStatus = {
-  include: { tenant: { select: { subscriptionStatus: true } } },
-} as const;
-
 export function findUserByEmail(email: string) {
-  return prisma.user.findUnique({ where: { email }, ...withTenantStatus });
+  return prisma.user.findUnique({ where: { email } });
 }
 
 /**
- * Resolves the single account a login identifier points at. Both columns are
- * unique, so either branch matches at most one user — which is what lets
- * phone stand in for email as a login credential.
+ * Resolves the single identity a login identifier points at. Both columns are
+ * unique on `users`, so either branch matches at most one account — which is
+ * what lets phone stand in for email as a login credential. Which *business*
+ * that identity is signing into is a separate question, answered from its
+ * memberships once the password (and second factor) check out.
  */
 export function findUserByIdentifier(identifier: Identifier) {
   return prisma.user.findUnique({
@@ -38,22 +36,22 @@ export function findUserByIdentifier(identifier: Identifier) {
       identifier.kind === "email"
         ? { email: identifier.email }
         : { phone: identifier.phone },
-    ...withTenantStatus,
   });
 }
 
 export function findUserByPhone(phone: string) {
-  return prisma.user.findUnique({ where: { phone }, ...withTenantStatus });
+  return prisma.user.findUnique({ where: { phone } });
 }
 
 export function findUserById(id: string) {
-  return prisma.user.findUnique({ where: { id }, ...withTenantStatus });
+  return prisma.user.findUnique({ where: { id } });
 }
 
 /**
  * Registering a business provisions its whole starting workspace atomically:
- * tenant, owner account, default "Main Store" location, and default settings.
- * Small businesses never have to configure any of this themselves.
+ * tenant, owner identity, the owner's membership, default "Main Store"
+ * location, and default settings. Small businesses never have to configure
+ * any of this themselves.
  */
 export function createTenantWithOwner(
   input: TenantWithOwnerInput,
@@ -74,7 +72,8 @@ export function createTenantWithOwner(
     // The business contact number doubles as the owner's login identifier and
     // SMS destination, but only if no other account has claimed it — several
     // businesses legitimately share one number, and users.phone is unique
-    // globally. A skipped claim just means that owner logs in by email.
+    // globally because it resolves one identity at login. A skipped claim just
+    // means that owner logs in by email.
     const phone = normalizePhone(input.phone);
     const phoneTaken = await tx.user.findUnique({
       where: { phone },
@@ -83,13 +82,15 @@ export function createTenantWithOwner(
 
     const owner = await tx.user.create({
       data: {
-        tenantId: tenant.id,
         name: input.ownerName,
         email: input.email,
         phone: phoneTaken ? null : phone,
         passwordHash,
-        role: Role.OWNER,
       },
+    });
+
+    const membership = await tx.membership.create({
+      data: { userId: owner.id, tenantId: tenant.id, role: Role.OWNER },
     });
 
     const location = await tx.location.create({
@@ -109,7 +110,34 @@ export function createTenantWithOwner(
       },
     });
 
-    return { tenant, owner, location, settings };
+    return { tenant, owner, membership, location, settings };
+  });
+}
+
+/**
+ * Accepting an invitation for an address that has never signed up: the
+ * identity and its membership are created together, so a half-provisioned
+ * account can't be left behind by a failure between the two.
+ */
+export function createUserWithMembership(input: {
+  name: string;
+  email: string;
+  passwordHash: string;
+  tenantId: string;
+  role: Role;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        name: input.name,
+        email: input.email,
+        passwordHash: input.passwordHash,
+      },
+    });
+    const membership = await tx.membership.create({
+      data: { userId: user.id, tenantId: input.tenantId, role: input.role },
+    });
+    return { user, membership };
   });
 }
 
@@ -147,8 +175,23 @@ export function revokeAllRefreshTokensForUser(userId: string) {
   });
 }
 
+/**
+ * Scoped revocation, for when one business changes someone's role or
+ * deactivates them. Sessions that person holds in *other* businesses are none
+ * of this tenant's business and must survive — which is exactly why
+ * refresh_tokens kept its tenantId when the other token tables lost theirs.
+ */
+export function revokeRefreshTokensForUserInTenant(
+  userId: string,
+  tenantId: string,
+) {
+  return prisma.refreshToken.updateMany({
+    where: { userId, tenantId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
+
 export function createPasswordResetToken(input: {
-  tenantId: string;
   userId: string;
   tokenHash: string;
   expiresAt: Date;

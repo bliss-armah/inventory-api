@@ -135,7 +135,8 @@ model Tenant {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  users                 User[]
+  memberships           Membership[]
+  staffInvites          StaffInvite[]
   settings              BusinessSettings?
   locations             Location[]
   categories            Category[]
@@ -151,12 +152,7 @@ model Tenant {
   stockCounts           StockCount[]
   activityLogs          ActivityLog[]
   refreshTokens         RefreshToken[]
-  passwordResets        PasswordResetToken[]
   priceHistory          ProductPriceHistory[]
-  pendingTwoFactorAuths PendingTwoFactorAuth[]
-  otpChallenges         OtpChallenge[]
-  rememberedDevices     RememberedDevice[]
-  twoFactorBackupCodes  TwoFactorBackupCode[]
   customers             Customer[]
   lowStockAlerts        LowStockAlert[]
   shifts                Shift[]
@@ -187,12 +183,9 @@ model BusinessSettings {
 
 model User {
   id                   String      @id @default(cuid())
-  tenantId             String
   name                 String
   email                String      @unique
   passwordHash         String
-  role                 Role
-  isActive             Boolean     @default(true)
   lastLoginAt          DateTime?
   // Unique because it's a login identifier in its own right, not just a
   // contact detail — findUserByIdentifier resolves one account from it, the
@@ -206,10 +199,11 @@ model User {
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
-  tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships            Membership[]
+  sentInvites            StaffInvite[]          @relation("StaffInviteInvitedBy")
   refreshTokens          RefreshToken[]
   passwordResets         PasswordResetToken[]
-  pendingTwoFactorAuths  PendingTwoFactorAuth[]
+  pendingLogins          PendingLogin[]
   otpChallenges          OtpChallenge[]
   rememberedDevices      RememberedDevice[]
   twoFactorBackupCodes   TwoFactorBackupCode[]
@@ -227,8 +221,54 @@ model User {
   sales                  Sale[]
   saleReturns            SaleReturn[]
 
-  @@index([tenantId])
   @@map("users")
+}
+
+/// A person's access to one business. This is what makes `email` a global
+/// identity rather than a per-tenant login: the same human can hold a
+/// membership in several tenants, and `role`/`isActive` are decided per
+/// tenant, not on the account. Tenant isolation still comes from the access
+/// token's tenantId, which is minted from exactly one of these rows.
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      Role
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@map("memberships")
+}
+
+/// A pending staff invitation. Nothing is written to `users` until the
+/// invitee accepts, so inviting an address that already has an account
+/// elsewhere is indistinguishable — to the inviting owner — from inviting a
+/// brand-new one. That is deliberate: staff email uniqueness is scoped to the
+/// tenant, and an owner must never learn that an address exists in some other
+/// business.
+model StaffInvite {
+  id              String    @id @default(cuid())
+  tenantId        String
+  email           String
+  name            String
+  role            Role
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  invitedByUserId String?
+  createdAt       DateTime  @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy User?  @relation("StaffInviteInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("staff_invites")
 }
 
 model RefreshToken {
@@ -249,14 +289,12 @@ model RefreshToken {
 
 model PasswordResetToken {
   id        String    @id @default(cuid())
-  tenantId  String
   userId    String
   tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -266,14 +304,15 @@ model PasswordResetToken {
 // ---------------------------------------------------------------------------
 // Two-factor authentication (SMS OTP)
 //
-// Mandatory for OWNER, optional (opt-in) for every other role. Two DB-backed
-// opaque-token models mirror RefreshToken/PasswordResetToken above rather
-// than introducing a new JWT type: PendingTwoFactorAuth is the bearer
-// credential for "you just passed the password check and are mid-2FA-flow"
-// (used as a Bearer token against the 2FA-only endpoints, same shape as a
-// normal access token from the client's point of view, but rejected by the
-// normal `authenticate` middleware); OtpChallenge is the actual code +
-// attempt counter checked against user input.
+// Mandatory for anyone who owns a business (any OWNER membership), optional
+// (opt-in) for everyone else. Two DB-backed opaque-token models mirror
+// RefreshToken/PasswordResetToken above rather than introducing a new JWT
+// type: PendingLogin is the bearer credential for "you passed the password
+// check and the login is not finished yet" (used as a Bearer token against
+// the 2FA and business-selection endpoints, same shape as a normal access
+// token from the client's point of view, but rejected by the normal
+// `authenticate` middleware); OtpChallenge is the actual code + attempt
+// counter checked against user input.
 // ---------------------------------------------------------------------------
 
 enum OtpPurpose {
@@ -288,19 +327,25 @@ enum OtpChannel {
   SMS
 }
 
-model PendingTwoFactorAuth {
-  id        String   @id @default(cuid())
-  tenantId  String
-  userId    String
-  tokenHash String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+/// One in-flight login between the password check and the access token.
+/// Identity-scoped on purpose — at this point the tenant is not yet decided,
+/// because business selection happens *after* 2FA. Letting a bare password
+/// reveal which businesses an address belongs to would hand away half of what
+/// the second factor exists to protect.
+model PendingLogin {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  /// Set the moment the second factor is satisfied. Null means the holder has
+  /// only proven the password so far, and may not select a business yet.
+  twoFactorAt DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@map("pending_two_factor_auth")
+  @@map("pending_logins")
 }
 
 /// One row per code sent, whether for a login challenge or for verifying a
@@ -310,7 +355,6 @@ model PendingTwoFactorAuth {
 /// verifying it before persisting it.
 model OtpChallenge {
   id          String     @id @default(cuid())
-  tenantId    String
   userId      String
   purpose     OtpPurpose
   channel     OtpChannel
@@ -321,7 +365,6 @@ model OtpChallenge {
   expiresAt   DateTime
   createdAt   DateTime   @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, purpose])
@@ -334,14 +377,12 @@ model OtpChallenge {
 /// for over 30 days needs to re-verify.
 model RememberedDevice {
   id         String   @id @default(cuid())
-  tenantId   String
   userId     String
   tokenHash  String   @unique
   expiresAt  DateTime
   createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -353,13 +394,11 @@ model RememberedDevice {
 /// turned back off) out of their own account.
 model TwoFactorBackupCode {
   id        String    @id @default(cuid())
-  tenantId  String
   userId    String
   codeHash  String
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])

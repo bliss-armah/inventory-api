@@ -92,11 +92,17 @@ export function findTenantsWithAlertsEnabled() {
   });
 }
 
-export function findOwnerEmails(tenantId: string) {
-  return prisma.user.findMany({
+/**
+ * Who to email about this business's low stock. Reached through memberships,
+ * since a person can be an OWNER here and something else somewhere else — the
+ * role that matters is the one held in *this* tenant.
+ */
+export async function findOwnerEmails(tenantId: string) {
+  const memberships = await prisma.membership.findMany({
     where: { tenantId, role: "OWNER", isActive: true },
-    select: { email: true, name: true },
+    select: { user: { select: { email: true, name: true } } },
   });
+  return memberships.map((membership) => membership.user);
 }
 
 export function alertsEnabledFor(tenantId: string) {

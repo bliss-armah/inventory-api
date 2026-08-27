@@ -2,23 +2,27 @@ import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
 import { OtpPurpose, OtpChannel } from "../../generated/prisma";
 
-export function findPendingAuthByTokenHash(tokenHash: string) {
-  return prisma.pendingTwoFactorAuth.findUnique({ where: { tokenHash } });
+export function findPendingLoginByTokenHash(tokenHash: string) {
+  return prisma.pendingLogin.findUnique({ where: { tokenHash } });
 }
 
-export function createPendingAuth(input: {
-  tenantId: string;
+/**
+ * `twoFactorAt` is set at creation only when there is no second factor left to
+ * satisfy — the row is then purely a business-selection ticket. Leaving it
+ * null is what stops a password-only holder from listing, let alone entering,
+ * the businesses the account belongs to.
+ */
+export function createPendingLogin(input: {
   userId: string;
   tokenHash: string;
   expiresAt: Date;
+  twoFactorAt?: Date | null;
 }) {
-  return prisma.pendingTwoFactorAuth.create({ data: input });
+  return prisma.pendingLogin.create({ data: input });
 }
 
-export function deletePendingAuth(id: string) {
-  return prisma.pendingTwoFactorAuth
-    .delete({ where: { id } })
-    .catch(() => null);
+export function deletePendingLogin(id: string) {
+  return prisma.pendingLogin.delete({ where: { id } }).catch(() => null);
 }
 
 /**
@@ -27,7 +31,6 @@ export function deletePendingAuth(id: string) {
  * code a user might still have sitting in their messages can't be replayed.
  */
 export async function replaceActiveChallenge(input: {
-  tenantId: string;
   userId: string;
   purpose: OtpPurpose;
   channel: OtpChannel;
@@ -66,7 +69,6 @@ export function findRememberedDeviceByTokenHash(tokenHash: string) {
 }
 
 export function createRememberedDevice(input: {
-  tenantId: string;
   userId: string;
   tokenHash: string;
   expiresAt: Date;
@@ -90,12 +92,11 @@ export function findActiveBackupCodes(userId: string) {
 
 export function createBackupCodesTx(
   tx: PrismaTransactionClient,
-  tenantId: string,
   userId: string,
   codeHashes: string[],
 ) {
   return tx.twoFactorBackupCode.createMany({
-    data: codeHashes.map((codeHash) => ({ tenantId, userId, codeHash })),
+    data: codeHashes.map((codeHash) => ({ userId, codeHash })),
   });
 }
 

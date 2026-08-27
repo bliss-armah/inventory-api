@@ -17,14 +17,18 @@ import {
   UnauthorizedError,
 } from "../../shared/errors.ts";
 import { Role, OtpPurpose, OtpChannel } from "../../generated/prisma";
+import * as membershipsRepository from "../memberships/memberships.repository.ts";
 import * as twoFactorAuthRepository from "./two-factor-auth.repository.ts";
 
 const MAX_OTP_ATTEMPTS = 5;
 
+/**
+ * The identity a second factor protects. No tenantId and no role: 2FA is a
+ * property of the person, not of any one business they work in, and it is
+ * settled before a business is chosen.
+ */
 export type TwoFactorUser = {
   id: string;
-  tenantId: string;
-  role: Role;
   email: string;
   phone: string | null;
   twoFactorEnabled: boolean;
@@ -69,15 +73,24 @@ function identifierDestination(
     : null;
 }
 
-/** OWNER can't opt out — every other role is opt-in via twoFactorEnabled. */
+/**
+ * Anyone who owns a business can't opt out — everyone else is opt-in via
+ * twoFactorEnabled. Role now lives per-membership, so "is an owner" means
+ * owning *any* of the businesses this identity can sign into: holding one
+ * OWNER seat is enough to make the account worth a second factor, whichever
+ * business the session ends up being for.
+ */
 export function requiresTwoFactor(
-  user: Pick<TwoFactorUser, "role" | "twoFactorEnabled">,
+  user: Pick<TwoFactorUser, "twoFactorEnabled">,
+  memberships: ReadonlyArray<{ role: Role }>,
 ): boolean {
-  return user.role === Role.OWNER || user.twoFactorEnabled;
+  return (
+    memberships.some((membership) => membership.role === Role.OWNER) ||
+    user.twoFactorEnabled
+  );
 }
 
 async function sendOtpChallenge(
-  tenantId: string,
   userId: string,
   channel: OtpChannel,
   destination: string,
@@ -87,7 +100,6 @@ async function sendOtpChallenge(
   const ttl = ms(env.OTP_CODE_TTL as ms.StringValue);
   const expiresAt = new Date(Date.now() + ttl);
   await twoFactorAuthRepository.replaceActiveChallenge({
-    tenantId,
     userId,
     purpose,
     channel,
@@ -128,8 +140,7 @@ export async function beginTwoFactorFlow(
   const expiresAt = new Date(
     Date.now() + ms(env.PENDING_TWO_FACTOR_AUTH_TTL as ms.StringValue),
   );
-  await twoFactorAuthRepository.createPendingAuth({
-    tenantId: user.tenantId,
+  await twoFactorAuthRepository.createPendingLogin({
     userId: user.id,
     tokenHash: hashOpaqueToken(mfaToken),
     expiresAt,
@@ -139,7 +150,6 @@ export async function beginTwoFactorFlow(
     identifierDestination(user, via) ?? confirmedDestination(user);
   if (target) {
     await sendOtpChallenge(
-      user.tenantId,
       user.id,
       target.channel,
       target.destination,
@@ -171,13 +181,12 @@ export function slideRememberedDevice(id: string) {
   return twoFactorAuthRepository.slideRememberedDevice(id, expiresAt);
 }
 
-export async function createRememberedDevice(tenantId: string, userId: string) {
+export async function createRememberedDevice(userId: string) {
   const token = generateOpaqueToken();
   const expiresAt = new Date(
     Date.now() + ms(env.REMEMBERED_DEVICE_TTL as ms.StringValue),
   );
   await twoFactorAuthRepository.createRememberedDevice({
-    tenantId,
     userId,
     tokenHash: hashOpaqueToken(token),
     expiresAt,
@@ -193,14 +202,13 @@ export async function createRememberedDevice(tenantId: string, userId: string) {
  * received and typed a code.
  */
 export async function sendSetupCode(
-  user: { id: string; tenantId: string; email: string },
+  user: { id: string; email: string },
   input:
     | { channel: typeof OtpChannel.SMS; phone: string }
     | { channel: typeof OtpChannel.EMAIL },
 ) {
   if (input.channel === OtpChannel.EMAIL) {
     await sendOtpChallenge(
-      user.tenantId,
       user.id,
       OtpChannel.EMAIL,
       user.email,
@@ -217,13 +225,7 @@ export async function sendSetupCode(
     });
   }
 
-  await sendOtpChallenge(
-    user.tenantId,
-    user.id,
-    OtpChannel.SMS,
-    phone,
-    OtpPurpose.SETUP,
-  );
+  await sendOtpChallenge(user.id, OtpChannel.SMS, phone, OtpPurpose.SETUP);
 }
 
 /**
@@ -261,8 +263,31 @@ async function consumeChallenge(
   return challenge;
 }
 
+/**
+ * `tenantId` is null when setup is being confirmed mid-login, before a
+ * business has been chosen — an owner forced through setup on first sign-in
+ * has no session, and therefore no tenant, yet. The activity entry then goes
+ * to every business the person works in, each of which has a real interest in
+ * knowing a second factor was turned on.
+ */
+async function logTwoFactorActivity(
+  tenantId: string | null,
+  userId: string,
+  action: string,
+  description: string,
+) {
+  const tenantIds = tenantId
+    ? [tenantId]
+    : (await membershipsRepository.listActiveForUser(userId)).map(
+        (membership) => membership.tenantId,
+      );
+  for (const id of tenantIds) {
+    await logActivity({ tenantId: id, userId, action, description });
+  }
+}
+
 export async function confirmSetup(
-  tenantId: string,
+  tenantId: string | null,
   userId: string,
   code: string,
 ) {
@@ -279,18 +304,17 @@ export async function confirmSetup(
     });
     await twoFactorAuthRepository.createBackupCodesTx(
       tx,
-      tenantId,
       userId,
       backupCodes.map((raw) => hashOpaqueToken(raw)),
     );
   });
 
-  await logActivity({
+  await logTwoFactorActivity(
     tenantId,
     userId,
-    action: "TWO_FACTOR_ENABLED",
-    description: "Two-factor authentication enabled",
-  });
+    "TWO_FACTOR_ENABLED",
+    "Two-factor authentication enabled",
+  );
 
   return { backupCodes };
 }
@@ -342,7 +366,6 @@ export async function regenerateBackupCodes(tenantId: string, userId: string) {
     await twoFactorAuthRepository.deleteUnusedBackupCodesTx(tx, userId);
     await twoFactorAuthRepository.createBackupCodesTx(
       tx,
-      tenantId,
       userId,
       backupCodes.map((raw) => hashOpaqueToken(raw)),
     );

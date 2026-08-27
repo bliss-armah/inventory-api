@@ -54,8 +54,13 @@ describe("platform admin creates a business", () => {
     // inheriting whatever the caller happened to omit.
     expect(settings?.enableExpiryTracking).toBe(false);
 
-    const owner = await prisma.user.findUnique({ where: { email } });
-    expect(owner?.role).toBe("OWNER");
+    const owner = await prisma.user.findUnique({
+      where: { email },
+      include: { memberships: true },
+    });
+    expect(owner?.memberships).toHaveLength(1);
+    expect(owner?.memberships[0]?.role).toBe("OWNER");
+    expect(owner?.memberships[0]?.tenantId).toBe(res.body.data.tenant.id);
 
     const tokens = await prisma.passwordResetToken.findMany({
       where: { userId: owner!.id },

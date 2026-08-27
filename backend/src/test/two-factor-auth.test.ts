@@ -300,7 +300,6 @@ describe("two-factor authentication", () => {
     await enableSmsTwoFactor(user.id, "+15550000004");
     await prisma.twoFactorBackupCode.create({
       data: {
-        tenantId: tenant.id,
         userId: user.id,
         // sha256("TESTBACKUP01"), matching hashOpaqueToken's algorithm.
         codeHash: (await import("../lib/tokens.ts")).hashOpaqueToken("TESTBACKUP01"),

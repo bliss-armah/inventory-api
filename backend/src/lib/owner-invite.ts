@@ -18,7 +18,6 @@ const SUBJECT = "Your Inventory Manager account is ready";
  * never be mistaken for a successful onboarding.
  */
 export async function sendOwnerInvite(input: {
-  tenantId: string;
   userId: string;
   email: string;
   businessName: string;
@@ -26,7 +25,6 @@ export async function sendOwnerInvite(input: {
   const token = generateOpaqueToken();
 
   await authRepository.createPasswordResetToken({
-    tenantId: input.tenantId,
     userId: input.userId,
     tokenHash: hashOpaqueToken(token),
     expiresAt: new Date(Date.now() + ms(env.OWNER_INVITE_TTL as ms.StringValue)),

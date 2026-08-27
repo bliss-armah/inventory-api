@@ -111,7 +111,6 @@ export async function createTenant(input: PlatformCreateTenantInput) {
   // provider is configured, and an owner who can never sign in must not be
   // reported as a successful onboarding.
   await sendOwnerInvite({
-    tenantId: tenant.id,
     userId: owner.id,
     email: owner.email,
     businessName: tenant.businessName,
