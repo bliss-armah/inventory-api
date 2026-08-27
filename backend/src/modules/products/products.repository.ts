@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma.ts";
-import type { ProductStatus } from "../../generated/prisma/enums.ts";
-import type { Prisma } from "../../generated/prisma/client.ts";
+import type { ProductStatus, Prisma } from "../../generated/prisma";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
+import { NO_BRAND, NO_CATEGORY } from "./products.validators.ts";
 import type {
   CreateProductInput,
   ProductFilter,
@@ -15,16 +15,30 @@ export function list(
   search: string | undefined,
   filter: ProductFilter,
 ) {
+  const priceFilter = {
+    ...(filter.minPrice !== undefined && { gte: filter.minPrice }),
+    ...(filter.maxPrice !== undefined && { lte: filter.maxPrice }),
+  };
+
   const where = {
     tenantId,
-    ...(filter.categoryId && { categoryId: filter.categoryId }),
-    ...(filter.brandId && { brandId: filter.brandId }),
+    ...(filter.categoryId &&
+      (filter.categoryId === NO_CATEGORY
+        ? { categoryId: null }
+        : { categoryId: filter.categoryId })),
+    ...(filter.brandId &&
+      (filter.brandId === NO_BRAND ? { brandId: null } : { brandId: filter.brandId })),
     ...(filter.status && { status: filter.status }),
+    ...(Object.keys(priceFilter).length > 0 && { sellingPrice: priceFilter }),
+    ...(filter.hasBarcode !== undefined && {
+      barcode: filter.hasBarcode ? { not: null } : null,
+    }),
     ...(search && {
       OR: [
         { sku: { contains: search, mode: "insensitive" as const } },
         { name: { contains: search, mode: "insensitive" as const } },
         { barcode: { contains: search, mode: "insensitive" as const } },
+        { description: { contains: search, mode: "insensitive" as const } },
       ],
     }),
   };
@@ -34,7 +48,7 @@ export function list(
       where,
       skip,
       take,
-      orderBy: { name: "asc" },
+      orderBy: { [filter.sort]: filter.order },
       include: { category: true, brand: true },
     }),
     prisma.product.count({ where }),

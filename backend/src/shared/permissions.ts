@@ -1,4 +1,4 @@
-import { Role } from "../generated/prisma/enums.ts";
+import { Role } from "../generated/prisma";
 
 /**
  * Single source of truth for which roles can do what. Every routes.ts

@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
-import type { MovementType } from "../../generated/prisma/enums.ts";
+import type { MovementType } from "../../generated/prisma";
 
 export type CreateMovementRecord = {
   tenantId: string;

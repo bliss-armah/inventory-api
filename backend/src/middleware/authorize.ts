@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { ForbiddenError, UnauthorizedError } from "../shared/errors.ts";
-import type { Role } from "../generated/prisma/enums.ts";
+import type { Role } from "../generated/prisma";
 
 export function authorize(...allowedRoles: Role[]) {
   return (req: Request, _res: Response, next: NextFunction) => {

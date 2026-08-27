@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MovementType } from "../../generated/prisma/enums.ts";
+import { MovementType } from "../../generated/prisma";
 
 export const movementFilterSchema = z.object({
   productId: z.string().trim().optional(),

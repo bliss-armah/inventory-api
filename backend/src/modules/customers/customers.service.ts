@@ -1,4 +1,4 @@
-import type { Role } from "../../generated/prisma/enums.ts";
+import type { Role } from "../../generated/prisma";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";

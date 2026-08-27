@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { AdjustmentReason } from "../../generated/prisma/enums.ts";
+import { AdjustmentReason } from "../../generated/prisma";
 
 export const createAdjustmentSchema = z.object({
+  id: z.uuid().optional(),
   productId: z.string().trim().min(1),
   locationId: z.string().trim().min(1),
   quantity: z.coerce.number().int().refine((value) => value !== 0, {

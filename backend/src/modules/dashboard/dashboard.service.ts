@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma.ts";
-import type { Role } from "../../generated/prisma/enums.ts";
+import type { Role } from "../../generated/prisma";
 import { PERMISSIONS, roleAllowed } from "../../shared/permissions.ts";
 import * as purchaseOrdersRepository from "../purchase-orders/purchase-orders.repository.ts";
 import * as stockMovementsRepository from "../stock-movements/stock-movements.repository.ts";

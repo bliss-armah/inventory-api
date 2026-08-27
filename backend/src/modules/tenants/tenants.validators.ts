@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { InventoryMode } from "../../generated/prisma/enums.ts";
+import { InventoryMode } from "../../generated/prisma";
 
 export const updateTenantSchema = z.object({
   businessName: z.string().trim().min(2).max(120).optional(),
@@ -23,7 +23,8 @@ const percent = z
  * as a visible 400 rather than a silent no-op the UI would render as "saved".
  */
 export const ownerUpdateSettingsSchema = z.strictObject({
-  maxDiscountPercent: percent,
+  maxDiscountPercent: percent.optional(),
+  lowStockAlertsEnabled: z.boolean().optional(),
 });
 
 /**

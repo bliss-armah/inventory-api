@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TransferStatus } from "../../generated/prisma/enums.ts";
+import { TransferStatus } from "../../generated/prisma";
 
 export const transferFilterSchema = z.object({
   status: z.enum(TransferStatus).optional(),

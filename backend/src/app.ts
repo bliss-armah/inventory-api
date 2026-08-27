@@ -1,3 +1,4 @@
+import { UPLOAD_ROOT } from "./lib/image-store.ts";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -43,6 +44,10 @@ app.use(
   }),
 );
 app.use(compression());
+app.use(
+  "/uploads",
+  express.static(UPLOAD_ROOT, { immutable: true, maxAge: "1y", fallthrough: false }),
+);
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(env.COOKIE_SECRET));

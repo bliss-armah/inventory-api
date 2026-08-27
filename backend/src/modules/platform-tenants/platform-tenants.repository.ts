@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma.ts";
-import { SubscriptionStatus } from "../../generated/prisma/enums.ts";
+import { SubscriptionStatus } from "../../generated/prisma";
 import type { EntitlementsInput } from "./platform-tenants.validators.ts";
 
 // Shared by list() and findById(), so the platform dashboard can show what

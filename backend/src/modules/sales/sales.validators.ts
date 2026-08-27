@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PaymentMethod } from "../../generated/prisma/enums.ts";
+import { PaymentMethod } from "../../generated/prisma";
 
 const money = z
   .string()

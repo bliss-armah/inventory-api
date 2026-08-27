@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { InventoryMode } from "../../generated/prisma/enums.ts";
+import { InventoryMode } from "../../generated/prisma";
 
 export const suspendTenantSchema = z.object({
   reason: z.string().trim().max(500).optional(),

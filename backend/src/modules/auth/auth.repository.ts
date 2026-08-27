@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma.ts";
-import { Role } from "../../generated/prisma/enums.ts";
+import { Role } from "../../generated/prisma";
 import { normalizePhone } from "../../lib/phone.ts";
 import type { Identifier } from "../../lib/identifier.ts";
 import type { EntitlementsInput } from "../tenants/tenants.validators.ts";

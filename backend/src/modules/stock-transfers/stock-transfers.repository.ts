@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
-import { TransferStatus } from "../../generated/prisma/enums.ts";
+import { TransferStatus } from "../../generated/prisma";
 import type { CreateTransferInput } from "./stock-transfers.validators.ts";
 
 const include = {

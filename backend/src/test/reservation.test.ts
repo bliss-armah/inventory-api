@@ -2,7 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../app";
 import { prisma } from "../lib/prisma";
-import { createTenantWithOwner, createLocation, createProduct, deleteTenant } from "./fixtures";
+import {
+  createTenantWithOwner,
+  createLocation,
+  createProduct,
+  deleteTenant,
+  seedStock,
+} from "./fixtures";
 
 /**
  * Approving a stock transfer reserves stock at the source location so it
@@ -158,5 +164,52 @@ describe("stock transfer reservations", { retry: 0 }, () => {
       where: { productId_locationId: { productId: product.id, locationId: fromLocation.id } },
     });
     expect(inventory?.quantity).toBe(10); // rejected, unchanged
+  });
+});
+
+/**
+ * A storekeeper on a spotty connection queues an adjustment and it replays when
+ * the network returns, so the same client id must never post twice.
+ */
+describe("stock adjustments carry a client-generated id", { retry: 0 }, () => {
+  const tenantIds: string[] = [];
+
+  afterAll(async () => {
+    for (const id of tenantIds) await deleteTenant(id);
+  });
+
+  it("is idempotent, so a replayed adjustment moves stock once", async () => {
+    const { tenant, token } = await createTenantWithOwner("Offline Adjust Co");
+    tenantIds.push(tenant.id);
+    const location = await createLocation(tenant.id, "Main");
+    const product = await createProduct(tenant.id);
+    await seedStock(tenant.id, product.id, location.id, 100);
+
+    const id = crypto.randomUUID();
+    const body = {
+      id,
+      productId: product.id,
+      locationId: location.id,
+      quantity: -10,
+      reason: "DAMAGE",
+    };
+
+    const first = await request(app)
+      .post("/api/stock-adjustments")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+    expect(first.status).toBe(201);
+
+    const replay = await request(app)
+      .post("/api/stock-adjustments")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+    expect(replay.status).toBe(201);
+
+    expect(await prisma.stockAdjustment.count({ where: { tenantId: tenant.id } })).toBe(1);
+    const inventory = await prisma.inventory.findFirst({
+      where: { productId: product.id, locationId: location.id },
+    });
+    expect(inventory!.quantity).toBe(90);
   });
 });

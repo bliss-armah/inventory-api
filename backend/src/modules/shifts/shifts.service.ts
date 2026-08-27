@@ -1,5 +1,4 @@
-import { Prisma } from "../../generated/prisma/client.ts";
-import { Role, ShiftStatus } from "../../generated/prisma/enums.ts";
+import { Prisma, Role, ShiftStatus } from "../../generated/prisma";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
@@ -50,6 +49,15 @@ export async function open(
   cashierId: string,
   input: OpenShiftInput,
 ) {
+  if (input.id) {
+    const existing = await shiftsRepository.findByIdForCashier(
+      tenantId,
+      cashierId,
+      input.id,
+    );
+    if (existing) return existing;
+  }
+
   const locationId = await resolveLocationId(tenantId, input.locationId);
 
   const shift = await withUniqueConstraint(
@@ -59,6 +67,7 @@ export async function open(
         cashierId,
         locationId,
         new Prisma.Decimal(input.openingFloat),
+        input.id,
       ),
     { field: "shift", message: "You already have an open shift" },
   );

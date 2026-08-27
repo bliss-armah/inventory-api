@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PaymentMethod, ReturnDisposition } from "../../generated/prisma/enums.ts";
+import { PaymentMethod, ReturnDisposition } from "../../generated/prisma";
 
 export const createReturnSchema = z.object({
   shiftId: z.string().trim().min(1),

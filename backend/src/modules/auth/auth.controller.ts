@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { created, ok } from "../../shared/api-response.ts";
 import { env } from "../../config/env.ts";
 import { ForbiddenError, UnauthorizedError } from "../../shared/errors.ts";
-import { Role } from "../../generated/prisma/enums.ts";
+import { Role } from "../../generated/prisma";
 import {
   setRefreshCookie,
   clearRefreshCookie,

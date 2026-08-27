@@ -6,7 +6,7 @@ import {
   Role,
   SubscriptionStatus,
   LocationType,
-} from "../generated/prisma/enums.ts";
+} from "../generated/prisma";
 
 // A valid cost-12 bcrypt hash reused across fixtures — tests mint access
 // tokens directly via signAccessToken() instead of logging in, so the real

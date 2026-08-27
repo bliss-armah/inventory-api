@@ -1,29 +1,4 @@
-/**
- * Demo dataset: everything the app needs to look and behave like a business
- * that has actually been used — catalogue, stock on hand, and one worked
- * example of every stock-moving flow (purchase order → goods receipt,
- * transfer between locations, adjustment, stock count).
- *
- * Deliberately separate from seed.ts, which stays a minimal bootstrap fit for
- * a real deployment (one platform admin, nothing else — every real business is
- * created from /platform/dashboard). This script owns the demo tenant end to
- * end, creating it on first run, so it never has to be run in any order.
- *
- * Everything that changes stock quantities goes through the service layer
- * rather than raw inserts, so `Inventory.quantity` always equals the sum of
- * its `StockMovement` rows and the dashboard/report figures reconcile. Writing
- * those rows by hand would let demo data drift out of agreement with movement
- * history, which reads as a bug in the app rather than bad fixtures. It also
- * means this file doubles as a smoke test of those services.
- *
- * Idempotent: every step looks for what it would create and skips if it's
- * already there, so re-running tops up a partial seed rather than duplicating
- * or failing.
- */
-// Side-effect import: loads the single server/.env and derives DATABASE_URL
-// before lib/prisma.ts reads it. The SEED_* vars below aren't part of the
-// validated schema (nothing at runtime needs them), so they come from
-// process.env, which this populates.
+
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import "../src/config/env.ts";
@@ -34,7 +9,7 @@ import {
   MovementType,
   AdjustmentReason,
   Role,
-} from "../src/generated/prisma/enums.ts";
+} from "../src/generated/prisma";
 import * as tenantsService from "../src/modules/tenants/tenants.service.ts";
 import * as locationsService from "../src/modules/locations/locations.service.ts";
 import * as usersService from "../src/modules/users/users.service.ts";

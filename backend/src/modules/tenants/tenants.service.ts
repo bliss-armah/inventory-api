@@ -1,4 +1,4 @@
-import { InventoryMode } from "../../generated/prisma/enums.ts";
+import { InventoryMode } from "../../generated/prisma";
 import { BadRequestError } from "../../shared/errors.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import * as tenantsRepository from "./tenants.repository.ts";

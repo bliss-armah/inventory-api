@@ -1,6 +1,6 @@
 import { sendEmail } from "./email.ts";
 import { sendSms } from "./sms.ts";
-import { OtpChannel } from "../generated/prisma/enums.ts";
+import { OtpChannel } from "../generated/prisma";
 
 const SUBJECT = "Your Inventory Manager verification code";
 

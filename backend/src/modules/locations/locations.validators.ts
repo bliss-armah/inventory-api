@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LocationStatus, LocationType } from "../../generated/prisma/enums.ts";
+import { LocationStatus, LocationType } from "../../generated/prisma";
 
 export const createLocationSchema = z.object({
   name: z.string().trim().min(2).max(120),

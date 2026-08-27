@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { OtpChannel } from "../../generated/prisma/enums.ts";
+import { OtpChannel } from "../../generated/prisma";
 
 /**
  * Where to send the setup code. SMS needs a phone number to verify; EMAIL

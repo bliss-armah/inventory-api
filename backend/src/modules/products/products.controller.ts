@@ -3,6 +3,7 @@ import { created, ok } from "../../shared/api-response";
 import { logActivity } from "../../lib/activity-logger";
 import { requireParam } from "../../shared/params";
 import * as productsService from "./products.service";
+import { deleteProductImage, storeProductImage } from "../../lib/image-store.ts";
 import {
   bulkUpdateProductsSchema,
   createProductSchema,
@@ -119,4 +120,21 @@ export async function bulkUpdate(req: Request, res: Response) {
     description: `Bulk update applied to ${result.updated} product(s)`,
   });
   ok(res, result);
+}
+
+export async function uploadImage(req: Request, res: Response) {
+  const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const id = requireParam(req, "id");
+  const existing = await productsService.findOne(req.auth!.tenantId, id);
+
+  const { url } = await storeProductImage(req.auth!.tenantId, bytes);
+  const product = await productsService.update(
+    req.auth!.tenantId,
+    req.auth!.userId,
+    id,
+    { imageUrl: url },
+  );
+
+  await deleteProductImage(existing.imageUrl);
+  ok(res, product);
 }

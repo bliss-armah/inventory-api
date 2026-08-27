@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
 } from "../../shared/errors.ts";
-import { SubscriptionStatus } from "../../generated/prisma/enums.ts";
+import { SubscriptionStatus } from "../../generated/prisma";
 import { withUniqueConstraint } from "../../shared/prisma-errors.ts";
 import * as authRepository from "./auth.repository.ts";
 import * as twoFactorAuthService from "../two-factor-auth/two-factor-auth.service.ts";

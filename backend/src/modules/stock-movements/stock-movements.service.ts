@@ -1,4 +1,4 @@
-import { MovementType } from "../../generated/prisma/enums.ts";
+import { MovementType } from "../../generated/prisma";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
 import { prisma } from "../../lib/prisma.ts";
 import { BadRequestError } from "../../shared/errors.ts";

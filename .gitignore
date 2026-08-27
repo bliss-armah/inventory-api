@@ -22,3 +22,6 @@ frontend/next-env.d.ts
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
 docs/superpowers/
+
+# Uploaded product images (kept in a docker volume, not in git)
+backend/uploads/

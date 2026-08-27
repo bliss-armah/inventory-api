@@ -31,3 +31,9 @@ productsRoutes.get("/:id", view, productsController.getOne);
 productsRoutes.get("/:id/price-history", view, productsController.getPriceHistory);
 productsRoutes.patch("/:id", manage, productsController.update);
 productsRoutes.post("/:id/barcode", manage, productsController.generateBarcode);
+productsRoutes.post(
+  "/:id/image",
+  manage,
+  express.raw({ type: ["image/png", "image/jpeg", "image/webp"], limit: "2mb" }),
+  productsController.uploadImage,
+);

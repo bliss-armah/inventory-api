@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { verifyAccessToken } from "../lib/jwt.ts";
 import { UnauthorizedError } from "../shared/errors.ts";
-import type { Role } from "../generated/prisma/enums.ts";
+import type { Role } from "../generated/prisma";
 
 export type AuthContext = {
   userId: string;

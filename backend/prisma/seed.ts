@@ -1,12 +1,11 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { env } from "../src/config/env.ts";
-import { PrismaClient } from "../src/generated/prisma/client.ts";
+// Side-effect import: loads the single server/.env and derives DATABASE_URL,
+// which the generated client reads from the environment when constructed.
+import "../src/config/env.ts";
+import { PrismaClient } from "../src/generated/prisma";
 
-const pool = new Pool({ connectionString: env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+const prisma = new PrismaClient();
 
 function resolvePassword(provided: string | undefined): {
   password: string;

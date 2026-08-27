@@ -36,6 +36,10 @@ services:
     # rather than localhost. config/env.ts derives the localhost equivalent
     # from this same file's POSTGRES_USER/PASSWORD/DB — one set of
     # credentials, not two.
+    # Only used when R2 is unconfigured, which is the local-development case;
+    # in production images go to Cloudflare R2 and this volume stays empty.
+    volumes:
+      - product_uploads:/app/uploads
     env_file:
       - ./.env
     environment:
@@ -55,3 +59,4 @@ services:
 
 volumes:
   postgres_data:
+  product_uploads:

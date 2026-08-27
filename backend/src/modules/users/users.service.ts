@@ -6,7 +6,7 @@ import {
 } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";
 import { withUniqueConstraints } from "../../shared/prisma-errors.ts";
-import { Role } from "../../generated/prisma/enums.ts";
+import { Role } from "../../generated/prisma";
 import * as usersRepository from "./users.repository.ts";
 import * as authRepository from "../auth/auth.repository.ts";
 import type { CreateUserInput, UpdateUserInput } from "./users.validators.ts";

@@ -16,7 +16,7 @@ import {
   ConflictError,
   UnauthorizedError,
 } from "../../shared/errors.ts";
-import { Role, OtpPurpose, OtpChannel } from "../../generated/prisma/enums.ts";
+import { Role, OtpPurpose, OtpChannel } from "../../generated/prisma";
 import * as twoFactorAuthRepository from "./two-factor-auth.repository.ts";
 
 const MAX_OTP_ATTEMPTS = 5;

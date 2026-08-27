@@ -3,12 +3,13 @@
 // also carries locationId. See CLAUDE.md for the full product spec.
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +158,7 @@ model Tenant {
   rememberedDevices     RememberedDevice[]
   twoFactorBackupCodes  TwoFactorBackupCode[]
   customers             Customer[]
+  lowStockAlerts        LowStockAlert[]
   shifts                Shift[]
   sales                 Sale[]
   saleItems             SaleItem[]
@@ -174,6 +176,7 @@ model BusinessSettings {
   enableBatchTracking  Boolean       @default(false)
   enableExpiryTracking Boolean       @default(false)
   maxDiscountPercent   Decimal       @default(0) @db.Decimal(5, 2)
+  lowStockAlertsEnabled Boolean      @default(false)
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
@@ -367,6 +370,22 @@ model TwoFactorBackupCode {
 // Catalog: locations, categories, brands, suppliers, products
 // ---------------------------------------------------------------------------
 
+model LowStockAlert {
+  id         String   @id @default(cuid())
+  tenantId   String
+  productId  String
+  locationId String
+  notifiedAt DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, productId, locationId])
+  @@index([tenantId])
+  @@map("low_stock_alerts")
+}
+
 model Location {
   id          String         @id @default(cuid())
   tenantId    String
@@ -391,6 +410,7 @@ model Location {
   shifts           Shift[]
   sales            Sale[]
   saleReturns      SaleReturn[]
+  lowStockAlerts   LowStockAlert[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -479,6 +499,8 @@ model Product {
   priceHistory       ProductPriceHistory[]
   saleItems          SaleItem[]
   saleReturnItems    SaleReturnItem[]
+
+  lowStockAlerts        LowStockAlert[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])

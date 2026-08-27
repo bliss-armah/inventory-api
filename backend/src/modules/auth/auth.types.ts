@@ -1,4 +1,4 @@
-import type { Role, OtpChannel } from "../../generated/prisma/enums.ts";
+import type { Role, OtpChannel } from "../../generated/prisma";
 
 export type AuthenticatedUser = {
   id: string;

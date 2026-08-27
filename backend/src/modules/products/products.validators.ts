@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProductStatus } from "../../generated/prisma/enums.ts";
+import { ProductStatus } from "../../generated/prisma";
 
 export const createProductSchema = z.object({
   sku: z.string().trim().min(1).max(60),
@@ -16,17 +16,45 @@ export const createProductSchema = z.object({
   costPrice: z.coerce.number().nonnegative(),
   sellingPrice: z.coerce.number().nonnegative(),
   minimumStock: z.coerce.number().int().nonnegative().default(0),
-  imageUrl: z.url().optional(),
+  imageUrl: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value.startsWith("/uploads/") || z.url().safeParse(value).success,
+      "Must be an uploaded image path or a full URL",
+    )
+    .optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial().extend({
   status: z.enum(ProductStatus).optional(),
 });
 
+export const NO_CATEGORY = "none";
+export const NO_BRAND = "none";
+
+const optionalBool = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true")
+  .optional();
+
+export const PRODUCT_SORT_FIELDS = [
+  "name",
+  "sku",
+  "sellingPrice",
+  "costPrice",
+  "createdAt",
+] as const;
+
 export const productFilterSchema = z.object({
   categoryId: z.string().trim().optional(),
   brandId: z.string().trim().optional(),
   status: z.enum(ProductStatus).optional(),
+  minPrice: z.coerce.number().nonnegative().optional(),
+  maxPrice: z.coerce.number().nonnegative().optional(),
+  hasBarcode: optionalBool,
+  sort: z.enum(PRODUCT_SORT_FIELDS).default("name"),
+  order: z.enum(["asc", "desc"]).default("asc"),
 });
 
 export const bulkUpdateProductsSchema = z

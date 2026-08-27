@@ -1,7 +1,7 @@
 import {
   MovementType,
   PurchaseOrderStatus,
-} from "../../generated/prisma/enums.ts";
+} from "../../generated/prisma";
 import { prisma } from "../../lib/prisma.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { BadRequestError, NotFoundError } from "../../shared/errors.ts";

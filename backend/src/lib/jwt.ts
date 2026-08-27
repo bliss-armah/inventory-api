@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.ts";
-import type { Role } from "../generated/prisma/enums.ts";
+import type { Role } from "../generated/prisma";
 
 export type AccessTokenPayload = {
   type: "tenant_user";

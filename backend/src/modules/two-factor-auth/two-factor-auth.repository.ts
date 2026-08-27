@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
-import { OtpPurpose, OtpChannel } from "../../generated/prisma/enums.ts";
+import { OtpPurpose, OtpChannel } from "../../generated/prisma";
 
 export function findPendingAuthByTokenHash(tokenHash: string) {
   return prisma.pendingTwoFactorAuth.findUnique({ where: { tokenHash } });

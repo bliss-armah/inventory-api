@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Prisma } from "../generated/prisma/client";
+import { Prisma } from "../generated/prisma";
 import { computeSaleTotals, assertWithinDiscountCap } from "../modules/sales/sales.money";
 
 const D = (value: string) => new Prisma.Decimal(value);

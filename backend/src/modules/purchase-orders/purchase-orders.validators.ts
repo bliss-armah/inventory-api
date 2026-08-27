@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PurchaseOrderStatus } from "../../generated/prisma/enums.ts";
+import { PurchaseOrderStatus } from "../../generated/prisma";
 
 const orderItemSchema = z.object({
   productId: z.string().trim().min(1),

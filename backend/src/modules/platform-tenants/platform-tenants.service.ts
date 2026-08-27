@@ -1,4 +1,4 @@
-import { SubscriptionStatus } from "../../generated/prisma/enums.ts";
+import { SubscriptionStatus } from "../../generated/prisma";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { BadRequestError, NotFoundError } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";

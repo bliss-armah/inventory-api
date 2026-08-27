@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MovementType } from "../../generated/prisma/enums.ts";
+import { MovementType } from "../../generated/prisma";
 import { prisma } from "../../lib/prisma.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { paginate } from "../../shared/pagination.ts";
@@ -19,6 +19,11 @@ export async function create(
     productIds: [input.productId],
     locationIds: [input.locationId],
   });
+
+  if (input.id) {
+    const existing = await stockAdjustmentsRepository.findByIdInTenant(tenantId, input.id);
+    if (existing) return existing;
+  }
 
   return prisma.$transaction(async (tx) => {
     const adjustment = await stockAdjustmentsRepository.create(

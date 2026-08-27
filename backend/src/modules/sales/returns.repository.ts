@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { Prisma } from "../../generated/prisma/client.ts";
+import { Prisma } from "../../generated/prisma";
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
 

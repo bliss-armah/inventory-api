@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../app";
 import { prisma } from "../lib/prisma";
-import { LocationStatus } from "../generated/prisma/enums";
+import { LocationStatus } from "../generated/prisma";
 import {
   createTenantWithOwner,
   createLocation,
@@ -245,6 +245,97 @@ describe("opening a shift without naming a location", () => {
       .post("/api/shifts")
       .set("Authorization", `Bearer ${tokenFor(cashier)}`)
       .send({ locationId: foreign.id, openingFloat: "30.00" });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * A till that opens a shift offline generates the id itself so queued sales can
+ * name it before the server has ever seen it. Replay must therefore be safe to
+ * repeat.
+ */
+describe("opening a shift with a client-generated id", () => {
+  const tenantIds: string[] = [];
+
+  afterAll(async () => {
+    for (const id of tenantIds) await deleteTenant(id);
+  });
+
+  async function posTenant() {
+    const created = await createTenantWithOwner("Offline Shift Co");
+    tenantIds.push(created.tenant.id);
+    await enablePos(created.tenant.id);
+    await createLocation(created.tenant.id, "Solo");
+    return created;
+  }
+
+  const uuid = () => crypto.randomUUID();
+
+  it("uses the id the till chose", async () => {
+    const { tenant } = await posTenant();
+    const cashier = await createCashier(tenant.id);
+    const id = uuid();
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ id, openingFloat: "100.00" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.id).toBe(id);
+  });
+
+  it("is idempotent, so a replayed shift does not become a second one", async () => {
+    const { tenant } = await posTenant();
+    const cashier = await createCashier(tenant.id);
+    const id = uuid();
+    const body = { id, openingFloat: "100.00" };
+
+    await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send(body)
+      .expect(201);
+
+    const replay = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send(body);
+
+    expect(replay.status).toBe(201);
+    expect(replay.body.data.id).toBe(id);
+    expect(await prisma.shift.count({ where: { tenantId: tenant.id } })).toBe(1);
+  });
+
+  it("will not let one cashier replay another cashier's shift id", async () => {
+    const { tenant } = await posTenant();
+    const first = await createCashier(tenant.id);
+    const second = await createCashier(tenant.id);
+    const id = uuid();
+
+    await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(first)}`)
+      .send({ id, openingFloat: "100.00" })
+      .expect(201);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(second)}`)
+      .send({ id, openingFloat: "50.00" });
+
+    expect(res.status).toBe(409);
+  });
+
+  it("still refuses a malformed id rather than inventing one", async () => {
+    const { tenant } = await posTenant();
+    const cashier = await createCashier(tenant.id);
+
+    const res = await request(app)
+      .post("/api/shifts")
+      .set("Authorization", `Bearer ${tokenFor(cashier)}`)
+      .send({ id: "not-a-uuid", openingFloat: "100.00" });
 
     expect(res.status).toBe(400);
   });

@@ -1,8 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { prisma } from "../../lib/prisma.ts";
-import { Prisma } from "../../generated/prisma/client.ts";
+import { Prisma, PurchaseOrderStatus } from "../../generated/prisma";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
-import { PurchaseOrderStatus } from "../../generated/prisma/enums.ts";
 import type {
   CreatePurchaseOrderInput,
   PurchaseOrderFilter,

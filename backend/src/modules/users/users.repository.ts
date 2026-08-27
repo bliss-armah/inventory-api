@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma.ts";
-import { Role } from "../../generated/prisma/enums.ts";
+import { Role } from "../../generated/prisma";
 import type { CreateUserInput, UpdateUserInput } from "./users.validators.ts";
 
 const selectFields = {

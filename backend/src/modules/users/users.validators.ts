@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Role } from "../../generated/prisma/enums.ts";
+import { Role } from "../../generated/prisma";
 import { isPhoneLike, normalizePhone } from "../../lib/phone.ts";
 
 /**

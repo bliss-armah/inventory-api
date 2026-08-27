@@ -2,7 +2,7 @@ import { prisma } from "../../lib/prisma.ts";
 import { BadRequestError, NotFoundError } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";
 import { withUniqueConstraint } from "../../shared/prisma-errors.ts";
-import { InventoryMode } from "../../generated/prisma/enums.ts";
+import { InventoryMode } from "../../generated/prisma";
 import * as locationsRepository from "./locations.repository.ts";
 import type {
   CreateLocationInput,

@@ -1,4 +1,4 @@
-import { Prisma } from "../../generated/prisma/client.ts";
+import { Prisma } from "../../generated/prisma";
 import { BadRequestError } from "../../shared/errors.ts";
 
 export type SaleTotalsInput = {

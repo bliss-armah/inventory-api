@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { ok } from "../../shared/api-response";
 import * as reportsService from "./reports.service";
+import * as tenantsService from "../tenants/tenants.service.ts";
+import { runLowStockDigest } from "../alerts/alerts.service.ts";
 
 export async function currentStock(req: Request, res: Response) {
   ok(res, await reportsService.currentStock(req.auth!.tenantId, req.query));
@@ -40,4 +42,12 @@ export async function salesSummary(req: Request, res: Response) {
 
 export async function discounts(req: Request, res: Response) {
   ok(res, await reportsService.discounts(req.auth!.tenantId, req.query));
+}
+
+export async function notifyLowStock(req: Request, res: Response) {
+  const tenant = await tenantsService.getCurrentTenant(req.auth!.tenantId);
+  const result = await runLowStockDigest(req.auth!.tenantId, tenant.businessName, {
+    force: true,
+  });
+  ok(res, result);
 }

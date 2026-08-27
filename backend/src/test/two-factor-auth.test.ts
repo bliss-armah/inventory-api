@@ -29,7 +29,7 @@ const {
   deleteTenant,
   TEST_PASSWORD,
 } = await import("./fixtures.ts");
-const { Role, OtpChannel } = await import("../generated/prisma/enums.ts");
+const { Role, OtpChannel } = await import("../generated/prisma");
 
 function codeFrom(body: string | undefined): string {
   const code = body?.match(/(\d{6})/)?.[1];

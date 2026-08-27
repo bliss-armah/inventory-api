@@ -1,7 +1,6 @@
 import { prisma } from "../../lib/prisma.ts";
-import { Prisma } from "../../generated/prisma/client.ts";
+import { Prisma, StockCountStatus } from "../../generated/prisma";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
-import { StockCountStatus } from "../../generated/prisma/enums.ts";
 
 const include = {
   location: true,

@@ -1,6 +1,5 @@
 import { prisma } from "../../lib/prisma.ts";
-import { Prisma } from "../../generated/prisma/client.ts";
-import { MovementType } from "../../generated/prisma/enums.ts";
+import { Prisma, MovementType } from "../../generated/prisma";
 
 const OUTBOUND_TYPES = [
   MovementType.SALE,

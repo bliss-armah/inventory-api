@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProductStatus } from "../../generated/prisma/enums.ts";
+import { ProductStatus } from "../../generated/prisma";
 import { parseCsv, toCsv } from "../../lib/csv.ts";
 
 export const CSV_COLUMNS = [

@@ -1,5 +1,4 @@
-import { Prisma } from "../../generated/prisma/client.ts";
-import { MovementType, ReturnDisposition } from "../../generated/prisma/enums.ts";
+import { Prisma, MovementType, ReturnDisposition } from "../../generated/prisma";
 import { prisma } from "../../lib/prisma.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { BadRequestError, NotFoundError } from "../../shared/errors.ts";

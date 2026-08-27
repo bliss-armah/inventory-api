@@ -1,9 +1,4 @@
-import { Prisma } from "../../generated/prisma/client.ts";
-import {
-  ShiftStatus,
-  PaymentMethod,
-  LocationStatus,
-} from "../../generated/prisma/enums.ts";
+import { Prisma, ShiftStatus, PaymentMethod, LocationStatus } from "../../generated/prisma";
 import { prisma } from "../../lib/prisma.ts";
 import type { PrismaTransactionClient } from "../../lib/transaction.ts";
 
@@ -37,9 +32,18 @@ export function open(
   cashierId: string,
   locationId: string,
   openingFloat: Prisma.Decimal,
+  id?: string,
 ) {
   return prisma.shift.create({
-    data: { tenantId, cashierId, locationId, openingFloat },
+    data: { ...(id ? { id } : {}), tenantId, cashierId, locationId, openingFloat },
+    include: { location: { select: { id: true, name: true } } },
+  });
+}
+
+export function findByIdForCashier(tenantId: string, cashierId: string, id: string) {
+  return prisma.shift.findFirst({
+    where: { id, tenantId, cashierId },
+    include: { location: { select: { id: true, name: true } } },
   });
 }
 

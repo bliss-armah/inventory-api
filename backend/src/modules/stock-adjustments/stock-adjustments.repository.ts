@@ -10,6 +10,7 @@ export function create(
 ) {
   return tx.stockAdjustment.create({
     data: {
+      ...(input.id ? { id: input.id } : {}),
       tenantId,
       userId,
       productId: input.productId,
@@ -19,6 +20,10 @@ export function create(
       notes: input.notes,
     },
   });
+}
+
+export function findByIdInTenant(tenantId: string, id: string) {
+  return prisma.stockAdjustment.findFirst({ where: { id, tenantId } });
 }
 
 export function list(tenantId: string, skip: number, take: number, locationId?: string) {

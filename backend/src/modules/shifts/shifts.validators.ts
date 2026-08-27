@@ -12,6 +12,7 @@ const money = z
  * server-side"; see shifts.service.ts resolveLocationId.
  */
 export const openShiftSchema = z.object({
+  id: z.uuid().optional(),
   locationId: z.string().trim().min(1).optional(),
   openingFloat: money,
 });
