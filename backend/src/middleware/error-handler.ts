@@ -10,6 +10,15 @@ export function notFoundHandler(req: Request, res: Response) {
   });
 }
 
+function isMalformedBodyError(err: unknown): boolean {
+  return (
+    err instanceof SyntaxError &&
+    "status" in err &&
+    (err as { status: unknown }).status === 400 &&
+    "body" in err
+  );
+}
+
 // Express 5 forwards rejected promises from async handlers to this middleware
 // automatically, so route handlers never need a manual try/catch wrapper.
 export function errorHandler(
@@ -29,6 +38,14 @@ export function errorHandler(
       // no clue which key it sent was wrong, so surface them in the message.
       message: formErrors.length > 0 ? formErrors.join("; ") : "Validation failed",
       errors: fieldErrors,
+    });
+    return;
+  }
+
+  if (isMalformedBodyError(err)) {
+    res.status(400).json({
+      success: false,
+      message: "Malformed request body",
     });
     return;
   }
