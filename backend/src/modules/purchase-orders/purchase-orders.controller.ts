@@ -26,7 +26,14 @@ export async function create(req: Request, res: Response) {
 }
 
 export async function submit(req: Request, res: Response) {
-  ok(res, await purchaseOrdersService.submit(req.auth!.tenantId, requireParam(req, "id")));
+  const order = await purchaseOrdersService.submit(req.auth!.tenantId, requireParam(req, "id"));
+  await logActivity({
+    tenantId: req.auth!.tenantId,
+    userId: req.auth!.userId,
+    action: "PURCHASE_ORDER_SUBMITTED",
+    description: `Purchase order ${order.orderNumber} submitted for approval`,
+  });
+  ok(res, order);
 }
 
 export async function approve(req: Request, res: Response) {
@@ -41,7 +48,14 @@ export async function approve(req: Request, res: Response) {
 }
 
 export async function cancel(req: Request, res: Response) {
-  ok(res, await purchaseOrdersService.cancel(req.auth!.tenantId, requireParam(req, "id")));
+  const order = await purchaseOrdersService.cancel(req.auth!.tenantId, requireParam(req, "id"));
+  await logActivity({
+    tenantId: req.auth!.tenantId,
+    userId: req.auth!.userId,
+    action: "PURCHASE_ORDER_CANCELED",
+    description: `Purchase order ${order.orderNumber} canceled`,
+  });
+  ok(res, order);
 }
 
 export async function receiveGoods(req: Request, res: Response) {

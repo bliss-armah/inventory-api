@@ -29,7 +29,14 @@ export async function approve(req: Request, res: Response) {
 }
 
 export async function cancel(req: Request, res: Response) {
-  ok(res, await stockTransfersService.cancel(req.auth!.tenantId, requireParam(req, "id")));
+  ok(
+    res,
+    await stockTransfersService.cancel(
+      req.auth!.tenantId,
+      req.auth!.userId,
+      requireParam(req, "id"),
+    ),
+  );
 }
 
 export async function dispatch(req: Request, res: Response) {

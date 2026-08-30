@@ -39,7 +39,14 @@ export async function create(
     locationIds: [input.fromLocationId, input.toLocationId],
     productIds: input.items.map((item) => item.productId),
   });
-  return stockTransfersRepository.create(tenantId, userId, input);
+  const transfer = await stockTransfersRepository.create(tenantId, userId, input);
+  await logActivity({
+    tenantId,
+    userId,
+    action: "STOCK_TRANSFER_CREATED",
+    description: `Transfer from ${transfer.fromLocation.name} to ${transfer.toLocation.name} created`,
+  });
+  return transfer;
 }
 
 /**
@@ -75,6 +82,16 @@ export async function approve(tenantId: string, userId: string, id: string) {
         quantity: item.quantity,
       });
     }
+
+    await logActivity(
+      {
+        tenantId,
+        userId,
+        action: "STOCK_TRANSFER_APPROVED",
+        description: `Transfer from ${transfer.fromLocation.name} to ${transfer.toLocation.name} approved`,
+      },
+      tx,
+    );
   });
 
   return findOne(tenantId, id);
@@ -89,7 +106,7 @@ export async function approve(tenantId: string, userId: string, id: string) {
  * in the gap between that read and this transition, leaving a reservation
  * this cancel would otherwise never clean up.
  */
-export async function cancel(tenantId: string, id: string) {
+export async function cancel(tenantId: string, userId: string, id: string) {
   const transfer = await findOne(tenantId, id);
 
   await prisma.$transaction(async (tx) => {
@@ -114,6 +131,16 @@ export async function cancel(tenantId: string, id: string) {
         quantity: item.quantity,
       });
     }
+
+    await logActivity(
+      {
+        tenantId,
+        userId,
+        action: "STOCK_TRANSFER_CANCELED",
+        description: `Transfer from ${transfer.fromLocation.name} to ${transfer.toLocation.name} canceled`,
+      },
+      tx,
+    );
   });
 
   return findOne(tenantId, id);
