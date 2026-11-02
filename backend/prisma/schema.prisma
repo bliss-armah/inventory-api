@@ -520,7 +520,7 @@ model Product {
   costPrice    Decimal       @db.Decimal(14, 2)
   sellingPrice Decimal       @db.Decimal(14, 2)
   minimumStock Int           @default(0)
-  imageUrl     String?
+  imageKey     String?
   status       ProductStatus @default(ACTIVE)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

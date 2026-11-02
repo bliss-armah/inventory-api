@@ -61,18 +61,16 @@ const envSchema = z.object({
   VYNFY_SENDER_ID: blank(z.string().optional()),
   VYNFY_BASE_URL: blank(z.string().default("https://sms.vynfy.com")),
   VYNFY_SEND_PATH: blank(z.string().default("/api/v1/send")),
-  // Cloudflare R2, addressed with the S3 API. All optional: when unset,
-  // lib/image-store.ts writes to local disk outside production and refuses to
-  // start in production, the same contract lib/email.ts uses for Brevo.
-  R2_ACCOUNT_ID: blank(z.string().optional()),
+  // Cloudflare R2, addressed with the S3 API. The bucket is private: reads go
+  // through a presigned URL, so no public hostname is configured. All optional:
+  // when unset, lib/image-store.ts writes to local disk outside production and
+  // refuses to store in production, the contract lib/email.ts uses for Brevo.
+  // R2_ENDPOINT is the account's S3 endpoint, or any S3-compatible server
+  // (MinIO) locally.
+  R2_ENDPOINT: blank(z.url().optional()),
   R2_ACCESS_KEY_ID: blank(z.string().optional()),
   R2_SECRET_ACCESS_KEY: blank(z.string().optional()),
   R2_BUCKET: blank(z.string().optional()),
-  R2_PUBLIC_BASE_URL: blank(z.url().optional()),
-  // Overrides the derived R2 endpoint. Set it to run against MinIO locally or
-  // any other S3-compatible store; path-style addressing turns on with it,
-  // which is what self-hosted servers expect.
-  R2_ENDPOINT: blank(z.url().optional()),
   OTP_CODE_TTL: z.string().default("10m"),
   PENDING_TWO_FACTOR_AUTH_TTL: z.string().default("10m"),
   REMEMBERED_DEVICE_TTL: z.string().default("30d"),

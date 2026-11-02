@@ -142,6 +142,15 @@ export async function generateMissingBarcodes(tenantId: string) {
   return { generated, skipped: pending.length - generated };
 }
 
+export async function replaceImage(tenantId: string, id: string, imageKey: string) {
+  const existing = await productsRepository.findByIdInTenant(tenantId, id);
+  if (!existing) {
+    throw new NotFoundError("Product not found");
+  }
+  const product = await productsRepository.setImageKey(tenantId, id, imageKey);
+  return { product, previousKey: existing.imageKey };
+}
+
 export async function findOne(tenantId: string, id: string) {
   const product = await productsRepository.findByIdInTenant(tenantId, id);
   if (!product) {

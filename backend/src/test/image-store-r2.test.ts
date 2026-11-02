@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent: Array<{ name: string; input: Record<string, unknown> }> = [];
+const created: Array<Record<string, unknown>> = [];
+const signed: Array<{ input: Record<string, unknown>; options: Record<string, unknown> }> = [];
 
 vi.mock("@aws-sdk/client-s3", () => {
   class PutObjectCommand {
     constructor(public input: Record<string, unknown>) {}
   }
   class DeleteObjectCommand {
+    constructor(public input: Record<string, unknown>) {}
+  }
+  class GetObjectCommand {
     constructor(public input: Record<string, unknown>) {}
   }
   class S3Client {
@@ -18,17 +23,25 @@ vi.mock("@aws-sdk/client-s3", () => {
       return {};
     }
   }
-  return { S3Client, PutObjectCommand, DeleteObjectCommand };
+  return { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand };
 });
 
-const created: Array<Record<string, unknown>> = [];
+vi.mock("@aws-sdk/s3-request-presigner", () => ({
+  getSignedUrl: async (
+    _client: unknown,
+    command: { input: Record<string, unknown> },
+    options: Record<string, unknown>,
+  ) => {
+    signed.push({ input: command.input, options });
+    return `https://signed.example.test/${String(command.input.Key)}?X-Amz-Expires=${String(options.expiresIn)}`;
+  },
+}));
 
 const R2_ENV = {
-  R2_ACCOUNT_ID: "acct123",
+  R2_ENDPOINT: "https://acct123.r2.cloudflarestorage.com",
   R2_ACCESS_KEY_ID: "key",
   R2_SECRET_ACCESS_KEY: "secret",
   R2_BUCKET: "inventory-images",
-  R2_PUBLIC_BASE_URL: "https://images.example.test",
 };
 
 async function loadWith(envPatch: Record<string, unknown>, isProduction = false) {
@@ -51,6 +64,7 @@ const PNG = Buffer.concat([
 beforeEach(() => {
   sent.length = 0;
   created.length = 0;
+  signed.length = 0;
 });
 
 afterEach(() => {
@@ -60,44 +74,28 @@ afterEach(() => {
 
 describe("deciding whether R2 is configured", () => {
   it("needs every setting, not just some", async () => {
-    const { r2 } = await loadWith({ R2_ACCOUNT_ID: "acct123", R2_BUCKET: "b" });
+    const { r2 } = await loadWith({ R2_ENDPOINT: R2_ENV.R2_ENDPOINT, R2_BUCKET: "b" });
 
     expect(r2.r2Config()).toBeNull();
   });
 
-  it("is configured once all five are present", async () => {
+  it("is configured once all four are present", async () => {
     const { r2 } = await loadWith(R2_ENV);
 
     expect(r2.r2Config()).toMatchObject({ bucket: "inventory-images" });
   });
 });
 
-describe("public URLs", () => {
-  it("joins the base and key without doubling the slash", async () => {
-    const { r2 } = await loadWith({
-      ...R2_ENV,
-      R2_PUBLIC_BASE_URL: "https://images.example.test/",
+describe("the S3 client", () => {
+  it("talks to the configured endpoint with path-style addressing", async () => {
+    const { store } = await loadWith(R2_ENV);
+    await store.storeProductImage("t1", PNG);
+
+    expect(created[0]).toMatchObject({
+      region: "auto",
+      endpoint: "https://acct123.r2.cloudflarestorage.com",
+      forcePathStyle: true,
     });
-    const config = r2.r2Config()!;
-
-    expect(r2.publicUrlFor(config, "products/t1/a.png")).toBe(
-      "https://images.example.test/products/t1/a.png",
-    );
-  });
-
-  it("recovers the key from a URL it produced", async () => {
-    const { r2 } = await loadWith(R2_ENV);
-    const config = r2.r2Config()!;
-    const url = r2.publicUrlFor(config, "products/t1/a.png");
-
-    expect(r2.keyFromPublicUrl(config, url)).toBe("products/t1/a.png");
-  });
-
-  it("refuses to derive a key from someone else's host", async () => {
-    const { r2 } = await loadWith(R2_ENV);
-    const config = r2.r2Config()!;
-
-    expect(r2.keyFromPublicUrl(config, "https://evil.test/products/t1/a.png")).toBeNull();
   });
 });
 
@@ -116,29 +114,20 @@ describe("object keys", () => {
 });
 
 describe("uploading to R2", () => {
-  it("points the S3 client at the account's R2 endpoint", async () => {
-    const { store } = await loadWith(R2_ENV);
-    await store.storeProductImage("t1", PNG);
-
-    expect(created[0]).toMatchObject({
-      region: "auto",
-      endpoint: "https://acct123.r2.cloudflarestorage.com",
-    });
-  });
-
-  it("puts the object with the sniffed content type and an immutable cache", async () => {
+  it("puts the object under a tenant key and returns the key, not a url", async () => {
     const { store } = await loadWith(R2_ENV);
 
-    const { url } = await store.storeProductImage("t1", PNG);
+    const stored = await store.storeProductImage("t1", PNG);
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.name).toBe("PutObjectCommand");
     expect(sent[0]!.input).toMatchObject({
       Bucket: "inventory-images",
       ContentType: "image/png",
-      CacheControl: "public, max-age=31536000, immutable",
+      CacheControl: "private, max-age=3600",
     });
-    expect(url).toMatch(/^https:\/\/images\.example\.test\/products\/t1\//);
+    expect(stored.key).toMatch(/^products\/t1\/.+\.png$/);
+    expect(stored).not.toHaveProperty("url");
   });
 
   it("still refuses a file that is not really an image", async () => {
@@ -151,11 +140,48 @@ describe("uploading to R2", () => {
   });
 });
 
+describe("reading an image back", () => {
+  it("signs a time-limited url for the key rather than exposing the bucket", async () => {
+    const { store } = await loadWith(R2_ENV);
+
+    const url = await store.productImageUrl("products/t1/a.png");
+
+    expect(signed[0]!.input).toMatchObject({
+      Bucket: "inventory-images",
+      Key: "products/t1/a.png",
+    });
+    expect(signed[0]!.options).toMatchObject({ expiresIn: 3600 });
+    expect(url).toContain("X-Amz-Expires=3600");
+  });
+
+  it("serves the local path when R2 is not configured", async () => {
+    const { store } = await loadWith({});
+
+    expect(await store.productImageUrl("products/t1/a.png")).toBe("/uploads/products/t1/a.png");
+    expect(signed).toHaveLength(0);
+  });
+
+  it("has nothing to sign for a product with no image", async () => {
+    const { store } = await loadWith(R2_ENV);
+
+    expect(await store.productImageUrl(null)).toBeNull();
+    expect(signed).toHaveLength(0);
+  });
+
+  it("refuses a stored value that is not one of our keys", async () => {
+    const { store } = await loadWith(R2_ENV);
+
+    expect(await store.productImageUrl("https://cdn.elsewhere.test/a.png")).toBeNull();
+    expect(await store.productImageUrl("products/../../etc/passwd")).toBeNull();
+    expect(signed).toHaveLength(0);
+  });
+});
+
 describe("removing a replaced image", () => {
   it("deletes the old object from the bucket", async () => {
     const { store } = await loadWith(R2_ENV);
 
-    await store.deleteProductImage("https://images.example.test/products/t1/old.png");
+    await store.deleteProductImage("products/t1/old.png");
 
     expect(sent[0]).toMatchObject({
       name: "DeleteObjectCommand",
@@ -163,10 +189,11 @@ describe("removing a replaced image", () => {
     });
   });
 
-  it("leaves a URL from another host alone", async () => {
+  it("leaves a value that is not one of our keys alone", async () => {
     const { store } = await loadWith(R2_ENV);
 
     await store.deleteProductImage("https://cdn.elsewhere.test/a.png");
+    await store.deleteProductImage("products/../secrets.png");
 
     expect(sent).toHaveLength(0);
   });

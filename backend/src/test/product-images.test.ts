@@ -62,10 +62,24 @@ describe("uploading a product image", () => {
       .send(PNG);
 
     expect(res.status).toBe(200);
-    expect(res.body.data.imageUrl).toMatch(/^\/uploads\/.+\.png$/);
+    expect(res.body.data.imageUrl).toMatch(/^\/uploads\/products\/.+\.png$/);
 
     const stored = await prisma.product.findUnique({ where: { id: product.id } });
-    expect(stored!.imageUrl).toBe(res.body.data.imageUrl);
+    expect(stored!.imageKey).toMatch(/^products\/.+\.png$/);
+    expect(res.body.data.imageUrl).toBe(`/uploads/${stored!.imageKey}`);
+  });
+
+  it("returns a url to the client and keeps the storage key to itself", async () => {
+    const { token, product } = await shop();
+
+    const res = await request(app)
+      .post(`/api/products/${product.id}/image`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Content-Type", "image/png")
+      .send(PNG);
+
+    expect(res.body.data).toHaveProperty("imageUrl");
+    expect(res.body.data).not.toHaveProperty("imageKey");
   });
 
   it("serves the stored file back", async () => {
@@ -164,6 +178,6 @@ describe("uploading a product image", () => {
 
     expect(res.status).toBe(404);
     const stored = await prisma.product.findUnique({ where: { id: theirs.product.id } });
-    expect(stored!.imageUrl).toBeNull();
+    expect(stored!.imageKey).toBeNull();
   });
 });

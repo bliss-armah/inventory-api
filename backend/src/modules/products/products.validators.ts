@@ -16,14 +16,6 @@ export const createProductSchema = z.object({
   costPrice: z.coerce.number().nonnegative(),
   sellingPrice: z.coerce.number().nonnegative(),
   minimumStock: z.coerce.number().int().nonnegative().default(0),
-  imageUrl: z
-    .string()
-    .trim()
-    .refine(
-      (value) => value.startsWith("/uploads/") || z.url().safeParse(value).success,
-      "Must be an uploaded image path or a full URL",
-    )
-    .optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial().extend({

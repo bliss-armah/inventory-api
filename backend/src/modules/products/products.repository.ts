@@ -110,6 +110,14 @@ export function updateManyFields(
   return prisma.product.updateMany({ where: { tenantId, id: { in: ids } }, data });
 }
 
+export function setImageKey(tenantId: string, id: string, imageKey: string) {
+  return prisma.product.update({
+    where: { id, tenantId },
+    data: { imageKey },
+    include: { category: true, brand: true },
+  });
+}
+
 export function create(tenantId: string, input: CreateProductInput) {
   return prisma.product.create({ data: { tenantId, ...input } });
 }

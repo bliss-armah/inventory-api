@@ -4,18 +4,19 @@ import path from "node:path";
 import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { isProduction } from "../config/env.ts";
 import { detectImage } from "./image-format.ts";
-import { keyFromPublicUrl, publicUrlFor, r2Client, r2Config } from "./r2-client.ts";
+import { r2Client, r2Config, signedDownloadUrl } from "./r2-client.ts";
 
 export { MAX_IMAGE_BYTES, detectImage } from "./image-format.ts";
 
 export const UPLOAD_ROOT = path.resolve(import.meta.dirname, "../../uploads");
+export const KEY_PREFIX = "products/";
 const LOCAL_URL_PREFIX = "/uploads/";
 
-export type StoredImage = { url: string };
+export type StoredImage = { key: string };
 
 export function objectKeyFor(tenantId: string, bytes: Buffer, ext: string): string {
   const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-  return `products/${tenantId}/${digest}-${randomUUID().slice(0, 8)}.${ext}`;
+  return `${KEY_PREFIX}${tenantId}/${digest}-${randomUUID().slice(0, 8)}.${ext}`;
 }
 
 async function storeInR2(tenantId: string, bytes: Buffer): Promise<StoredImage> {
@@ -29,21 +30,22 @@ async function storeInR2(tenantId: string, bytes: Buffer): Promise<StoredImage> 
       Key: key,
       Body: bytes,
       ContentType: mime,
-      CacheControl: "public, max-age=31536000, immutable",
+      CacheControl: "private, max-age=3600",
     }),
   );
 
-  return { url: publicUrlFor(config, key) };
+  return { key };
 }
 
 async function storeOnDisk(tenantId: string, bytes: Buffer): Promise<StoredImage> {
   const { ext } = detectImage(bytes);
-  const filename = objectKeyFor(tenantId, bytes, ext).split("/").pop()!;
+  const key = objectKeyFor(tenantId, bytes, ext);
+  const target = path.join(UPLOAD_ROOT, key);
 
-  await mkdir(path.join(UPLOAD_ROOT, tenantId), { recursive: true });
-  await writeFile(path.join(UPLOAD_ROOT, tenantId, filename), bytes);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, bytes);
 
-  return { url: `${LOCAL_URL_PREFIX}${tenantId}/${filename}` };
+  return { key };
 }
 
 export async function storeProductImage(
@@ -55,32 +57,41 @@ export async function storeProductImage(
   }
   if (isProduction) {
     throw new Error(
-      "Product image storage is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET and R2_PUBLIC_BASE_URL.",
+      "Product image storage is not configured. Set R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET.",
     );
   }
   return storeOnDisk(tenantId, bytes);
 }
 
-export async function deleteProductImage(url: string | null): Promise<void> {
-  if (!url) return;
+function isStorageKey(value: string): boolean {
+  return value.startsWith(KEY_PREFIX) && !value.includes("..");
+}
+
+export async function productImageUrl(key: string | null): Promise<string | null> {
+  if (!key || !isStorageKey(key)) return null;
+
+  const config = r2Config();
+  if (config) {
+    return signedDownloadUrl(config, key);
+  }
+  return `${LOCAL_URL_PREFIX}${key}`;
+}
+
+export async function deleteProductImage(key: string | null): Promise<void> {
+  if (!key || !isStorageKey(key)) return;
 
   try {
     const config = r2Config();
     if (config) {
-      const key = keyFromPublicUrl(config, url);
-      if (!key) return;
       await r2Client(config).send(
         new DeleteObjectCommand({ Bucket: config.bucket, Key: key }),
       );
       return;
     }
 
-    if (!url.startsWith(LOCAL_URL_PREFIX)) return;
-    const relative = url.slice(LOCAL_URL_PREFIX.length);
-    if (relative.includes("..")) return;
-    await rm(path.join(UPLOAD_ROOT, relative), { force: true });
+    await rm(path.join(UPLOAD_ROOT, key), { force: true });
   } catch (error) {
-    console.error(`Could not remove the replaced image ${url}:`, error);
+    console.error(`Could not remove the replaced image ${key}:`, error);
   }
 }
 

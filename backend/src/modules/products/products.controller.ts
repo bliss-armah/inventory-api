@@ -5,17 +5,26 @@ import { requireParam } from "../../shared/params";
 import * as productsService from "./products.service";
 import { deleteProductImage, storeProductImage } from "../../lib/image-store.ts";
 import {
+  presentProduct,
+  presentProductPage,
+} from "./products.presenter.ts";
+import {
   bulkUpdateProductsSchema,
   createProductSchema,
   updateProductSchema,
 } from "./products.validators";
 
 export async function list(req: Request, res: Response) {
-  ok(res, await productsService.list(req.auth!.tenantId, req.query));
+  const page = await productsService.list(req.auth!.tenantId, req.query);
+  ok(res, await presentProductPage(page));
 }
 
 export async function getOne(req: Request, res: Response) {
-  ok(res, await productsService.findOne(req.auth!.tenantId, requireParam(req, "id")));
+  const product = await productsService.findOne(
+    req.auth!.tenantId,
+    requireParam(req, "id"),
+  );
+  ok(res, await presentProduct(product));
 }
 
 export async function create(req: Request, res: Response) {
@@ -27,7 +36,7 @@ export async function create(req: Request, res: Response) {
     action: "PRODUCT_CREATED",
     description: `Product "${product.name}" (${product.sku}) created`,
   });
-  created(res, product);
+  created(res, await presentProduct(product));
 }
 
 export async function update(req: Request, res: Response) {
@@ -44,7 +53,7 @@ export async function update(req: Request, res: Response) {
     action: "PRODUCT_UPDATED",
     description: `Product "${product.name}" (${product.sku}) updated`,
   });
-  ok(res, product);
+  ok(res, await presentProduct(product));
 }
 
 export async function generateBarcode(req: Request, res: Response) {
@@ -58,7 +67,7 @@ export async function generateBarcode(req: Request, res: Response) {
     action: "PRODUCT_UPDATED",
     description: `Barcode ${product.barcode} generated for "${product.name}" (${product.sku})`,
   });
-  ok(res, product);
+  ok(res, await presentProduct(product));
 }
 
 export async function generateMissingBarcodes(req: Request, res: Response) {
@@ -125,16 +134,14 @@ export async function bulkUpdate(req: Request, res: Response) {
 export async function uploadImage(req: Request, res: Response) {
   const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
   const id = requireParam(req, "id");
-  const existing = await productsService.findOne(req.auth!.tenantId, id);
 
-  const { url } = await storeProductImage(req.auth!.tenantId, bytes);
-  const product = await productsService.update(
+  const { key } = await storeProductImage(req.auth!.tenantId, bytes);
+  const { product, previousKey } = await productsService.replaceImage(
     req.auth!.tenantId,
-    req.auth!.userId,
     id,
-    { imageUrl: url },
+    key,
   );
 
-  await deleteProductImage(existing.imageUrl);
-  ok(res, product);
+  await deleteProductImage(previousKey);
+  ok(res, await presentProduct(product));
 }
