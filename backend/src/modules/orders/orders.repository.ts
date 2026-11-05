@@ -48,7 +48,7 @@ export function list(
       include: {
         customer: { select: { id: true, name: true } },
         createdBy: { select: { id: true, name: true } },
-        items: { select: { id: true, quantity: true } },
+        items: { select: { id: true, quantity: true, pickedQuantity: true } },
       },
     }),
     prisma.order.count({ where }),
@@ -75,6 +75,19 @@ export function claimOpen(
   return tx.order.updateMany({
     where: { tenantId, id, status: OrderStatus.OPEN },
     data,
+  });
+}
+
+export function setPickedQuantity(
+  tx: PrismaTransactionClient,
+  tenantId: string,
+  orderId: string,
+  itemId: string,
+  pickedQuantity: number,
+) {
+  return tx.orderItem.updateMany({
+    where: { id: itemId, tenantId, orderId },
+    data: { pickedQuantity },
   });
 }
 

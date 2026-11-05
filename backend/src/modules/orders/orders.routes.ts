@@ -14,3 +14,4 @@ ordersRoutes.post("/", ordersController.create);
 ordersRoutes.get("/by-number/:orderNumber", ordersController.getByNumber);
 ordersRoutes.get("/:id", ordersController.get);
 ordersRoutes.post("/:id/cancel", ordersController.cancel);
+ordersRoutes.put("/:id/picking", ordersController.updatePicking);

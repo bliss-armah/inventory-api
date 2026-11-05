@@ -10,7 +10,7 @@ import { releaseStock, reserveStock } from "../inventory/inventory.service.ts";
 import { resolveLocationId } from "../shifts/shifts.service.ts";
 import * as ordersRepository from "./orders.repository.ts";
 import { ordersListQuerySchema } from "./orders.validators.ts";
-import type { CreateOrderInput } from "./orders.validators.ts";
+import type { CreateOrderInput, UpdatePickingInput } from "./orders.validators.ts";
 
 const ORDER_NUMBER_DIGITS = 6;
 const ORDER_NUMBER_ATTEMPTS = 8;
@@ -160,6 +160,57 @@ export async function get(tenantId: string, id: string) {
     throw new NotFoundError("Order not found");
   }
   return order;
+}
+
+export async function updatePicking(
+  tenantId: string,
+  userId: string,
+  id: string,
+  input: UpdatePickingInput,
+) {
+  const requested = new Map(input.items.map((item) => [item.itemId, item.pickedQuantity]));
+
+  await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findFirst({
+      where: { tenantId, id },
+      select: { orderNumber: true, status: true, items: { select: { id: true, quantity: true } } },
+    });
+    if (!order) {
+      throw new NotFoundError("Order not found");
+    }
+    if (order.status !== OrderStatus.OPEN) {
+      throw new ConflictError(`This order is already ${order.status.toLowerCase()}`);
+    }
+
+    const quantityById = new Map(order.items.map((item) => [item.id, item.quantity]));
+    for (const [itemId, pickedQuantity] of requested) {
+      const quantity = quantityById.get(itemId);
+      if (quantity === undefined) {
+        throw new BadRequestError("One of the items does not belong to this order");
+      }
+      if (pickedQuantity > quantity) {
+        throw new BadRequestError("Picked quantity cannot be more than the ordered quantity");
+      }
+    }
+
+    for (const [itemId, pickedQuantity] of requested) {
+      await ordersRepository.setPickedQuantity(tx, tenantId, id, itemId, pickedQuantity);
+    }
+
+    const after = await ordersRepository.findItems(tx, tenantId, id);
+    const complete = after.filter((item) => item.pickedQuantity >= item.quantity).length;
+    await logActivity(
+      {
+        tenantId,
+        userId,
+        action: "ORDER_PICKING_UPDATED",
+        description: `Order ${order.orderNumber}: ${complete} of ${after.length} lines picked`,
+      },
+      tx,
+    );
+  });
+
+  return get(tenantId, id);
 }
 
 export async function getByNumber(tenantId: string, orderNumber: string) {

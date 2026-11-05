@@ -1063,13 +1063,14 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(cuid())
-  tenantId  String
-  orderId   String
-  productId String
-  quantity  Int
-  unitPrice Decimal @db.Decimal(14, 2)
-  lineTotal Decimal @db.Decimal(14, 2)
+  id             String  @id @default(cuid())
+  tenantId       String
+  orderId        String
+  productId      String
+  quantity       Int
+  pickedQuantity Int     @default(0)
+  unitPrice      Decimal @db.Decimal(14, 2)
+  lineTotal      Decimal @db.Decimal(14, 2)
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)

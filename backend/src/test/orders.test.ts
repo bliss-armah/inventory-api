@@ -346,6 +346,97 @@ describe("orders", { retry: 0 }, () => {
     expect(byNumber.status).toBe(404);
   });
 
+  it("records picking progress per line and reports it on the order", async () => {
+    const a = await stockedProduct(10);
+    const b = await stockedProduct(10);
+    const created = await createOrder(cashierToken, [
+      { productId: a.id, quantity: 4 },
+      { productId: b.id, quantity: 2 },
+    ]);
+    const items: Array<{ id: string; productId: string; pickedQuantity: number }> = created.body.data.items;
+    expect(items.every((item) => item.pickedQuantity === 0)).toBe(true);
+    const lineA = items.find((item) => item.productId === a.id)!;
+
+    const res = await request(app)
+      .put(`/api/orders/${created.body.data.id}/picking`)
+      .set("Authorization", `Bearer ${tenant.token}`)
+      .send({ items: [{ itemId: lineA.id, pickedQuantity: 3 }] });
+
+    expect(res.status).toBe(200);
+    const after: Array<{ productId: string; pickedQuantity: number }> = res.body.data.items;
+    expect(after.find((item) => item.productId === a.id)?.pickedQuantity).toBe(3);
+    expect(after.find((item) => item.productId === b.id)?.pickedQuantity).toBe(0);
+  });
+
+  it("refuses to pick more than was ordered or an item from another order", async () => {
+    const product = await stockedProduct(10);
+    const created = await createOrder(cashierToken, [{ productId: product.id, quantity: 2 }]);
+    const other = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);
+    const line = created.body.data.items[0];
+    const foreignLine = other.body.data.items[0];
+
+    const tooMany = await request(app)
+      .put(`/api/orders/${created.body.data.id}/picking`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ items: [{ itemId: line.id, pickedQuantity: 3 }] });
+    const foreign = await request(app)
+      .put(`/api/orders/${created.body.data.id}/picking`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ items: [{ itemId: foreignLine.id, pickedQuantity: 1 }] });
+
+    expect(tooMany.status).toBe(400);
+    expect(foreign.status).toBe(400);
+  });
+
+  it("allows picking to be undone", async () => {
+    const product = await stockedProduct(10);
+    const created = await createOrder(cashierToken, [{ productId: product.id, quantity: 2 }]);
+    const line = created.body.data.items[0];
+    const url = `/api/orders/${created.body.data.id}/picking`;
+
+    await request(app).put(url).set("Authorization", `Bearer ${cashierToken}`)
+      .send({ items: [{ itemId: line.id, pickedQuantity: 2 }] }).expect(200);
+    const undone = await request(app).put(url).set("Authorization", `Bearer ${cashierToken}`)
+      .send({ items: [{ itemId: line.id, pickedQuantity: 0 }] });
+
+    expect(undone.body.data.items[0].pickedQuantity).toBe(0);
+  });
+
+  it("stops picking once the order is paid or cancelled", async () => {
+    const product = await stockedProduct(10);
+    const paid = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);
+    await payOrder(cashierToken, paid.body.data.id, [
+      { productId: product.id, quantity: 1, unitPrice: "20.00" },
+    ]).expect(201);
+    const cancelled = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);
+    await request(app).post(`/api/orders/${cancelled.body.data.id}/cancel`)
+      .set("Authorization", `Bearer ${cashierToken}`).expect(200);
+
+    const onPaid = await request(app)
+      .put(`/api/orders/${paid.body.data.id}/picking`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ items: [{ itemId: paid.body.data.items[0].id, pickedQuantity: 1 }] });
+    const onCancelled = await request(app)
+      .put(`/api/orders/${cancelled.body.data.id}/picking`)
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ items: [{ itemId: cancelled.body.data.items[0].id, pickedQuantity: 1 }] });
+
+    expect(onPaid.status).toBe(409);
+    expect(onCancelled.status).toBe(409);
+  });
+
+  it("does not let another business touch an order's picking", async () => {
+    const product = await stockedProduct(10);
+    const created = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);
+
+    const res = await request(app)
+      .put(`/api/orders/${created.body.data.id}/picking`)
+      .set("Authorization", `Bearer ${other.token}`)
+      .send({ items: [{ itemId: created.body.data.items[0].id, pickedQuantity: 1 }] });
+
+    expect(res.status).toBe(404);
+  });
+
   it("lists open slips filtered by status", async () => {
     const product = await stockedProduct(10);
     const created = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);

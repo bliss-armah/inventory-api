@@ -22,4 +22,17 @@ export const ordersListQuerySchema = z.object({
   status: z.enum(OrderStatus).optional(),
 });
 
+export const updatePickingSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        itemId: z.string().trim().min(1),
+        pickedQuantity: z.coerce.number().int().min(0).max(1_000_000),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+export type UpdatePickingInput = z.infer<typeof updatePickingSchema>;
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
