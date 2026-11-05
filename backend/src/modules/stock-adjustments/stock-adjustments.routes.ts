@@ -18,3 +18,8 @@ stockAdjustmentsRoutes.post(
   authorize(...PERMISSIONS.stockAdjustments.create),
   stockAdjustmentsController.create,
 );
+stockAdjustmentsRoutes.post(
+  "/bulk",
+  authorize(...PERMISSIONS.stockAdjustments.create),
+  stockAdjustmentsController.createBulk,
+);
