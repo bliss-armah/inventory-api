@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { OrderStatus, Prisma } from "../../generated/prisma";
 import { logActivity } from "../../lib/activity-logger.ts";
 import { prisma } from "../../lib/prisma.ts";
@@ -12,14 +12,12 @@ import * as ordersRepository from "./orders.repository.ts";
 import { ordersListQuerySchema } from "./orders.validators.ts";
 import type { CreateOrderInput } from "./orders.validators.ts";
 
-const ORDER_NUMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const ORDER_NUMBER_LENGTH = 6;
-const ORDER_NUMBER_ATTEMPTS = 5;
+const ORDER_NUMBER_DIGITS = 6;
+const ORDER_NUMBER_ATTEMPTS = 8;
 
 function generateOrderNumber() {
-  const bytes = randomBytes(ORDER_NUMBER_LENGTH);
-  const code = Array.from(bytes, (byte) => ORDER_NUMBER_ALPHABET[byte % ORDER_NUMBER_ALPHABET.length]).join("");
-  return `ORD-${code}`;
+  const code = randomInt(0, 10 ** ORDER_NUMBER_DIGITS);
+  return `ORD-${String(code).padStart(ORDER_NUMBER_DIGITS, "0")}`;
 }
 
 function mergeLines(items: CreateOrderInput["items"]) {

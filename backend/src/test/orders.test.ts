@@ -90,7 +90,7 @@ describe("orders", { retry: 0 }, () => {
     const res = await createOrder(cashierToken, [{ productId: product.id, quantity: 4 }]);
 
     expect(res.status).toBe(201);
-    expect(res.body.data.orderNumber).toMatch(/^ORD-[A-Z2-9]{6}$/);
+    expect(res.body.data.orderNumber).toMatch(/^ORD-\d{6}$/);
     expect(res.body.data.status).toBe("OPEN");
     expect(Number(res.body.data.total)).toBe(80);
     expect(Number(res.body.data.items[0].unitPrice)).toBe(20);
