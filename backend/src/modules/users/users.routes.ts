@@ -17,4 +17,5 @@ usersRoutes.delete("/invites/:id", usersController.revokeInvite);
 // `:id` is a membership id — what an owner can change is this person's access
 // to *this* business, never their identity.
 usersRoutes.patch("/:id", usersController.update);
+usersRoutes.post("/:id/password", usersController.setPassword);
 usersRoutes.delete("/:id", usersController.remove);

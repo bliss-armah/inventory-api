@@ -23,5 +23,10 @@ export const updateMembershipSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const setStaffPasswordSchema = z.object({
+  password: z.string().min(8).max(72).optional(),
+});
+
+export type SetStaffPasswordInput = z.infer<typeof setStaffPasswordSchema>;
 export type InviteStaffInput = z.infer<typeof inviteStaffSchema>;
 export type UpdateMembershipInput = z.infer<typeof updateMembershipSchema>;

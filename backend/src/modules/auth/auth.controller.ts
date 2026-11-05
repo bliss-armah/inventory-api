@@ -13,7 +13,6 @@ import * as authRepository from "./auth.repository.ts";
 import type { LoginOutcome } from "./auth.types.ts";
 import {
   acceptInviteSchema,
-  forgotPasswordSchema,
   loginSchema,
   registerSchema,
   resetPasswordSchema,
@@ -121,12 +120,6 @@ export async function logout(req: Request, res: Response) {
   }
   clearRefreshCookie(res);
   ok(res, null);
-}
-
-export async function forgotPassword(req: Request, res: Response) {
-  const input = forgotPasswordSchema.parse(req.body);
-  await authService.forgotPassword(input);
-  ok(res, null, "If that email exists, a reset link has been sent");
 }
 
 export async function resetPassword(req: Request, res: Response) {

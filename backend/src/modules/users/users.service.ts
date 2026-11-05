@@ -5,6 +5,7 @@ import { generateOpaqueToken, hashOpaqueToken } from "../../lib/tokens.ts";
 import {
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
 } from "../../shared/errors.ts";
 import { paginate } from "../../shared/pagination.ts";
@@ -12,8 +13,10 @@ import { Role } from "../../generated/prisma";
 import * as membershipsRepository from "../memberships/memberships.repository.ts";
 import * as staffInvitesRepository from "./staff-invites.repository.ts";
 import * as authRepository from "../auth/auth.repository.ts";
+import { setPasswordForUser } from "../auth/admin-password.service.ts";
 import type {
   InviteStaffInput,
+  SetStaffPasswordInput,
   UpdateMembershipInput,
 } from "./users.validators.ts";
 
@@ -212,6 +215,31 @@ export async function update(
   }
 
   return updated;
+}
+
+export async function setPassword(
+  tenantId: string,
+  id: string,
+  input: SetStaffPasswordInput,
+) {
+  const membership = await requireMembership(tenantId, id);
+  if (membership.role === Role.OWNER) {
+    throw new ForbiddenError(
+      "An owner's password can only be changed by the platform administrator",
+    );
+  }
+
+  const memberships = await membershipsRepository.listActiveForUser(
+    membership.userId,
+  );
+  if (memberships.some((other) => other.tenantId !== tenantId)) {
+    throw new ForbiddenError(
+      "This person also works in another business, so their password can't be changed from here",
+    );
+  }
+
+  const result = await setPasswordForUser(membership.userId, input.password);
+  return { membership, result };
 }
 
 /**

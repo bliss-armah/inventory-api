@@ -1,7 +1,6 @@
 import ms from "ms";
 import { env } from "../../config/env.ts";
 import { signAccessToken } from "../../lib/jwt.ts";
-import { sendEmail } from "../../lib/email.ts";
 import {
   hashPassword,
   verifyPassword,
@@ -24,7 +23,6 @@ import * as staffInvitesRepository from "../users/staff-invites.repository.ts";
 import * as pendingLoginRepository from "./pending-login.repository.ts";
 import type {
   AcceptInviteInput,
-  ForgotPasswordInput,
   LoginInput,
   RegisterInput,
   ResetPasswordInput,
@@ -43,7 +41,6 @@ import type {
  * endpoint into an account-enumeration oracle.
  */
 const INVALID_CREDENTIALS = "Invalid credentials";
-const PASSWORD_RESET_SUBJECT = "Reset your Inventory Manager password";
 const SUSPENDED_MESSAGE =
   "This business account has been suspended. Contact support.";
 
@@ -489,37 +486,6 @@ export async function logout(refreshToken: string): Promise<void> {
   );
   if (stored && !stored.revokedAt) {
     await authRepository.revokeRefreshToken(stored.id);
-  }
-}
-
-export async function forgotPassword(
-  input: ForgotPasswordInput,
-): Promise<void> {
-  const user = await authRepository.findUserByEmail(input.email);
-  // Always resolve without revealing whether the email exists.
-  if (!user) return;
-
-  const token = generateOpaqueToken();
-  const ttlMs = ms(env.PASSWORD_RESET_TOKEN_TTL as ms.StringValue);
-  await authRepository.createPasswordResetToken({
-    userId: user.id,
-    tokenHash: hashOpaqueToken(token),
-    expiresAt: new Date(Date.now() + ttlMs),
-  });
-
-  // Only the hash is stored, so this is the one moment the raw token exists.
-  const link = `${env.FRONTEND_URL}/reset-password?token=${token}`;
-
-  try {
-    await sendEmail(
-      user.email,
-      PASSWORD_RESET_SUBJECT,
-      `Someone asked to reset the password for your Inventory Manager account. Set a new one here: ${link}\n\nThis link expires in ${ms(ttlMs, { long: true })} and can only be used once. If this wasn't you, ignore this email — your password stays unchanged.`,
-    );
-  } catch (error) {
-    console.error(
-      `Failed to send password reset email to ${user.email}: ${(error as Error).message}`,
-    );
   }
 }
 

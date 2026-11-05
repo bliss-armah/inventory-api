@@ -10,7 +10,6 @@ import { sendEmail } from "../../lib/email";
 import * as platformAuthRepository from "./platform-auth.repository";
 import type {
   CreatePlatformAdminInput,
-  PlatformForgotPasswordInput,
   PlatformLoginInput,
   PlatformResetPasswordInput,
 } from "./platform-auth.validators";
@@ -107,7 +106,6 @@ export async function me(id: string): Promise<PlatformAdminSummary> {
   return toSummary(admin);
 }
 
-const RESET_SUBJECT = "Reset your Inventory Manager platform password";
 const INVITE_SUBJECT = "Your Inventory Manager platform account is ready";
 
 function resetLink(token: string): string {
@@ -122,25 +120,6 @@ async function issueResetToken(platformAdminId: string, ttl: string): Promise<st
     expiresAt: new Date(Date.now() + ms(ttl as ms.StringValue)),
   });
   return token;
-}
-
-export async function forgotPassword(input: PlatformForgotPasswordInput): Promise<void> {
-  const admin = await platformAuthRepository.findByEmail(input.email);
-  if (!admin || !admin.isActive) return;
-
-  const token = await issueResetToken(admin.id, env.PASSWORD_RESET_TOKEN_TTL);
-
-  try {
-    await sendEmail(
-      admin.email,
-      RESET_SUBJECT,
-      `Someone asked to reset the password for your Inventory Manager platform account. Set a new one here: ${resetLink(token)}\n\nThis link expires in ${ms(ms(env.PASSWORD_RESET_TOKEN_TTL as ms.StringValue), { long: true })} and can only be used once. If this wasn't you, ignore this email — your password stays unchanged.`,
-    );
-  } catch (error) {
-    console.error(
-      `Failed to send platform reset email to ${admin.email}: ${(error as Error).message}`,
-    );
-  }
 }
 
 export async function resetPassword(input: PlatformResetPasswordInput): Promise<void> {

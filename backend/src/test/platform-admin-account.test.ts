@@ -32,53 +32,7 @@ afterEach(async () => {
   await cleanup();
 });
 
-describe("a platform admin can recover their own password", () => {
-  it("emails a single-use reset link that actually changes the password", async () => {
-    const { admin } = await createPlatformAdmin();
-    createdIds.push(admin.id);
-
-    const asked = await request(app)
-      .post("/api/platform/auth/forgot-password")
-      .send({ email: admin.email });
-    expect(asked.status).toBe(200);
-    expect(sentEmails).toHaveLength(1);
-    expect(sentEmails[0]!.to).toBe(admin.email);
-
-    const token = tokenFrom(sentEmails[0]!.body);
-    const reset = await request(app)
-      .post("/api/platform/auth/reset-password")
-      .send({ token, password: "BrandNewPass123!" });
-    expect(reset.status).toBe(200);
-
-    const login = await request(app)
-      .post("/api/platform/auth/login")
-      .send({ email: admin.email, password: "BrandNewPass123!" });
-    expect(login.status).toBe(200);
-    expect(login.body.data.accessToken).toBeTruthy();
-
-    const replay = await request(app)
-      .post("/api/platform/auth/reset-password")
-      .send({ token, password: "YetAnother123!" });
-    expect(replay.status).toBe(400);
-  });
-
-  it("answers an unknown email exactly as it answers a real one", async () => {
-    const { admin } = await createPlatformAdmin();
-    createdIds.push(admin.id);
-
-    const real = await request(app)
-      .post("/api/platform/auth/forgot-password")
-      .send({ email: admin.email });
-    sentEmails.length = 0;
-    const unknown = await request(app)
-      .post("/api/platform/auth/forgot-password")
-      .send({ email: "nobody-at-all@example.test" });
-
-    expect(unknown.status).toBe(real.status);
-    expect(unknown.body).toEqual(real.body);
-    expect(sentEmails).toHaveLength(0);
-  });
-
+describe("set-password tokens", () => {
   it("refuses a token that was never issued", async () => {
     const res = await request(app)
       .post("/api/platform/auth/reset-password")

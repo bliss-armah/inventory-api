@@ -17,7 +17,8 @@
     "prisma:deploy": "tsx scripts/prisma.ts migrate deploy",
     "prisma:studio": "tsx scripts/prisma.ts studio",
     "db:seed": "tsx prisma/seed.ts",
-    "db:seed:demo": "tsx prisma/seed-demo.ts"
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
+    "admin:set-password": "tsx prisma/set-platform-admin-password.ts"
   },
   "keywords": [],
   "author": "",

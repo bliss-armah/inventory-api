@@ -5,6 +5,7 @@ import * as platformTenantsService from "./platform-tenants.service";
 import {
   createTenantSchema,
   entitlementsSchema,
+  ownerPasswordSchema,
   suspendTenantSchema,
 } from "./platform-tenants.validators";
 
@@ -36,6 +37,16 @@ export async function updateEntitlements(req: Request, res: Response) {
     res,
     await platformTenantsService.updateEntitlements(requireParam(req, "id"), input),
   );
+}
+
+export async function setOwnerPassword(req: Request, res: Response) {
+  const input = ownerPasswordSchema.parse(req.body);
+  const { owner, result } = await platformTenantsService.setOwnerPassword(
+    requireParam(req, "id"),
+    input,
+  );
+  res.setHeader("Cache-Control", "no-store");
+  ok(res, { owner, ...result }, "Password changed");
 }
 
 export async function stats(_req: Request, res: Response) {

@@ -91,3 +91,23 @@ docker compose exec backend npm run db:seed
 
 Sign in as that admin and create businesses from `/platform/dashboard`. Never
 run `db:seed:demo` against a real deployment.
+
+## Passwords
+
+There is no "forgot password" link and nothing emails a reset. Passwords are
+changed by someone with authority over the account, who then tells the person:
+
+- **Staff** — the business owner opens **Staff**, chooses **Set password**, and
+  passes the new password on. Only available for staff who work in no other
+  business.
+- **Business owners** — the platform admin opens the business in
+  `/platform/dashboard` and chooses **Owner password**.
+- **The platform admin** — from the server terminal, in the backend service:
+
+```sh
+ADMIN_EMAIL=you@example.com NEW_PASSWORD='a-long-new-password' npm run admin:set-password
+```
+
+Each change signs the person out everywhere, and the new password is shown once
+when the system generates it. Brevo is still needed for invitations (new owners
+and new staff set their first password from an emailed link).

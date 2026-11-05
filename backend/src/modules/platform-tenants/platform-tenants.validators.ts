@@ -33,4 +33,10 @@ export const createTenantSchema = z.object({
   enableExpiryTracking: z.boolean().optional(),
 });
 
+export const ownerPasswordSchema = z.object({
+  userId: z.string().trim().min(1).optional(),
+  password: z.string().min(8).max(72).optional(),
+});
+
+export type OwnerPasswordInput = z.infer<typeof ownerPasswordSchema>;
 export type PlatformCreateTenantInput = z.infer<typeof createTenantSchema>;

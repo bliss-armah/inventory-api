@@ -3,7 +3,11 @@ import { created, ok } from "../../shared/api-response";
 import { logActivity } from "../../lib/activity-logger";
 import { requireParam } from "../../shared/params";
 import * as usersService from "./users.service";
-import { inviteStaffSchema, updateMembershipSchema } from "./users.validators";
+import {
+  inviteStaffSchema,
+  setStaffPasswordSchema,
+  updateMembershipSchema,
+} from "./users.validators";
 
 export async function list(req: Request, res: Response) {
   const result = await usersService.list(req.auth!.tenantId, req.query);
@@ -54,6 +58,23 @@ export async function update(req: Request, res: Response) {
     description: `Staff access updated for ${membership.user.email}`,
   });
   ok(res, membership);
+}
+
+export async function setPassword(req: Request, res: Response) {
+  const input = setStaffPasswordSchema.parse(req.body);
+  const { membership, result } = await usersService.setPassword(
+    req.auth!.tenantId,
+    requireParam(req, "id"),
+    input,
+  );
+  await logActivity({
+    tenantId: req.auth!.tenantId,
+    userId: req.auth!.userId,
+    action: "STAFF_PASSWORD_CHANGED",
+    description: `Password changed for ${membership.user.email} by an administrator`,
+  });
+  res.setHeader("Cache-Control", "no-store");
+  ok(res, result, "Password changed");
 }
 
 export async function remove(req: Request, res: Response) {

@@ -6,7 +6,6 @@ import { UnauthorizedError } from "../../shared/errors";
 import * as platformAuthService from "./platform-auth.service";
 import {
   createPlatformAdminSchema,
-  platformForgotPasswordSchema,
   platformLoginSchema,
   platformResetPasswordSchema,
 } from "./platform-auth.validators";
@@ -56,12 +55,6 @@ export async function logout(req: Request, res: Response) {
 
 export async function me(req: Request, res: Response) {
   ok(res, await platformAuthService.me(req.platformAdmin!.id));
-}
-
-export async function forgotPassword(req: Request, res: Response) {
-  const input = platformForgotPasswordSchema.parse(req.body);
-  await platformAuthService.forgotPassword(input);
-  ok(res, null, "If that email has a platform account, a reset link is on its way.");
 }
 
 export async function resetPassword(req: Request, res: Response) {

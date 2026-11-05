@@ -8,9 +8,11 @@ import { sendOwnerInvite } from "../../lib/owner-invite.ts";
 import { withUniqueConstraint } from "../../shared/prisma-errors.ts";
 import * as platformTenantsRepository from "./platform-tenants.repository.ts";
 import * as authRepository from "../auth/auth.repository.ts";
+import { setPasswordForUser } from "../auth/admin-password.service.ts";
 import { assertInventoryModeChangeAllowed } from "../tenants/tenants.service.ts";
 import type {
   EntitlementsInput,
+  OwnerPasswordInput,
   PlatformCreateTenantInput,
   SuspendTenantInput,
 } from "./platform-tenants.validators.ts";
@@ -135,6 +137,35 @@ export async function createTenant(input: PlatformCreateTenantInput) {
  * inventory-mode guard is shared with the owner-facing path so switching to
  * single-location can't strand stock at a location the app stops showing.
  */
+export async function setOwnerPassword(id: string, input: OwnerPasswordInput) {
+  const tenant = await findOne(id);
+  const owners = tenant.memberships;
+  if (owners.length === 0) {
+    throw new BadRequestError("This business has no owner");
+  }
+
+  const owner = input.userId
+    ? owners.find((candidate) => candidate.user.id === input.userId)
+    : owners.length === 1
+      ? owners[0]
+      : undefined;
+  if (!owner) {
+    throw new BadRequestError(
+      input.userId
+        ? "That person is not an owner of this business"
+        : "This business has more than one owner — choose whose password to change",
+    );
+  }
+
+  const result = await setPasswordForUser(owner.user.id, input.password);
+  await logActivity({
+    tenantId: id,
+    action: "OWNER_PASSWORD_CHANGED",
+    description: `Password for ${owner.user.email} was changed by a platform administrator`,
+  });
+  return { owner: owner.user, result };
+}
+
 export async function updateEntitlements(id: string, input: EntitlementsInput) {
   const tenant = await findOne(id);
   await assertInventoryModeChangeAllowed(tenant.id, input.inventoryMode);

@@ -10,7 +10,6 @@ authRoutes.post("/register", authRateLimit, authController.register);
 authRoutes.post("/login", authRateLimit, authController.login);
 authRoutes.post("/refresh", authController.refresh);
 authRoutes.post("/logout", authController.logout);
-authRoutes.post("/forgot-password", authRateLimit, authController.forgotPassword);
 authRoutes.post("/reset-password", authRateLimit, authController.resetPassword);
 authRoutes.get("/me", authenticate, authController.me);
 

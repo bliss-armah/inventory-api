@@ -34,10 +34,6 @@ export const loginSchema = z
     password: value.password,
   }));
 
-export const forgotPasswordSchema = z.object({
-  email: z.email().toLowerCase(),
-});
-
 export const selectBusinessSchema = z.object({
   tenantId: z.string().min(1),
 });
@@ -60,7 +56,6 @@ export const resetPasswordSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type SelectBusinessInput = z.infer<typeof selectBusinessSchema>;
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
