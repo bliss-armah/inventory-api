@@ -7,19 +7,6 @@ export type AuthContext = {
   userId: string;
   tenantId: string;
   role: Role;
-  /**
-   * True only for the short-lived, DB-backed session used mid-login — between
-   * the password check and the access token (see middleware/
-   * authenticate-pending-login). Never set by this middleware; normal access
-   * tokens are always a full session. While it is set, `tenantId` is empty:
-   * the business hasn't been chosen yet.
-   */
-  mfaPending?: boolean;
-  /** Set alongside mfaPending — whether the second factor is already done, and
-   * therefore whether this token may be used to select a business. */
-  twoFactorSatisfied?: boolean;
-  /** Set alongside mfaPending — the PendingLogin row id, so it can be deleted
-   * once the login completes. */
   pendingAuthId?: string;
 };
 

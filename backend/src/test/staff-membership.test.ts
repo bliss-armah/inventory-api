@@ -286,10 +286,6 @@ describe("one business's decisions don't reach another", () => {
 });
 
 describe("signing in to one of several businesses", () => {
-  /**
-   * A cashier rather than an owner, so 2FA doesn't need satisfying first —
-   * the 2FA-then-selection ordering has its own test below.
-   */
   async function cashierInTwoBusinesses() {
     const first = await track(createTenantWithOwner("Pi Co"));
     const second = await track(createTenantWithOwner("Rho Co"));
@@ -321,7 +317,7 @@ describe("signing in to one of several businesses", () => {
 
     const chosen = await request(app)
       .post("/api/auth/select-business")
-      .set("Authorization", `Bearer ${login.body.data.mfaToken}`)
+      .set("Authorization", `Bearer ${login.body.data.selectionToken}`)
       .send({ tenantId: second.tenant.id });
 
     expect(chosen.status).toBe(200);
@@ -339,7 +335,7 @@ describe("signing in to one of several businesses", () => {
 
     const res = await request(app)
       .post("/api/auth/select-business")
-      .set("Authorization", `Bearer ${login.body.data.mfaToken}`)
+      .set("Authorization", `Bearer ${login.body.data.selectionToken}`)
       .send({ tenantId: stranger.tenant.id });
 
     expect(res.status).toBe(403);
@@ -351,16 +347,16 @@ describe("signing in to one of several businesses", () => {
     const login = await request(app)
       .post("/api/auth/login")
       .send({ identifier: person.email, password: TEST_PASSWORD });
-    const mfaToken = login.body.data.mfaToken;
+    const selectionToken = login.body.data.selectionToken;
 
     await request(app)
       .post("/api/auth/select-business")
-      .set("Authorization", `Bearer ${mfaToken}`)
+      .set("Authorization", `Bearer ${selectionToken}`)
       .send({ tenantId: second.tenant.id });
 
     const replay = await request(app)
       .post("/api/auth/select-business")
-      .set("Authorization", `Bearer ${mfaToken}`)
+      .set("Authorization", `Bearer ${selectionToken}`)
       .send({ tenantId: second.tenant.id });
     expect(replay.status).toBe(401);
   });
@@ -411,9 +407,7 @@ describe("signing in to one of several businesses", () => {
     expect(res.status).toBe(403);
   });
 
-  it("holds the business list back until the second factor is satisfied", async () => {
-    // An owner always needs 2FA, so login stops at otp_required and the
-    // pending token it hands out must not be usable for selection yet.
+  it("asks an owner of several businesses which one to enter, with no code step", async () => {
     const owner = await track(createTenantWithOwnerAndPassword("Phi Co"));
     const other = await track(createTenantWithOwner("Chi Co"));
     await prisma.membership.create({
@@ -428,27 +422,50 @@ describe("signing in to one of several businesses", () => {
       .post("/api/auth/login")
       .send({ identifier: owner.user.email, password: TEST_PASSWORD });
 
-    expect(login.body.data.status).not.toBe("select_business");
-    expect(login.body.data.businesses).toBeUndefined();
+    expect(login.status).toBe(200);
+    expect(login.body.data.status).toBe("select_business");
+    expect(login.body.data.businesses).toHaveLength(2);
+    expect(login.body.data.accessToken).toBeUndefined();
 
-    const premature = await request(app)
+    const chosen = await request(app)
       .post("/api/auth/select-business")
-      .set("Authorization", `Bearer ${login.body.data.mfaToken}`)
-      .send({ tenantId: other.tenant.id });
+      .set("Authorization", `Bearer ${login.body.data.selectionToken}`)
+      .send({ tenantId: owner.tenant.id });
 
-    expect(premature.status).toBe(401);
+    expect(chosen.status).toBe(200);
+    expect(chosen.body.data.user.role).toBe(Role.OWNER);
+    expect(chosen.body.data.accessToken).toBeTruthy();
+  });
+
+  it("signs an owner of one business straight in with just the password", async () => {
+    const owner = await track(createTenantWithOwnerAndPassword("Omicron Co"));
+
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ identifier: owner.user.email, password: TEST_PASSWORD });
+
+    expect(login.status).toBe(200);
+    expect(login.body.data.status).toBe("success");
+    expect(login.body.data.accessToken).toBeTruthy();
+    expect(String(login.headers["set-cookie"])).toContain("refreshToken=");
+  });
+
+  it("refuses a selection token that does not exist", async () => {
+    const res = await request(app)
+      .post("/api/auth/select-business")
+      .set("Authorization", "Bearer not-a-real-token")
+      .send({ tenantId: "anything" });
+
+    expect(res.status).toBe(401);
   });
 });
 
-describe("an invitation is not a way past the second factor", () => {
+describe("accepting an invitation signs the person in", () => {
   afterEach(() => {
     sentEmails.length = 0;
   });
 
-  it("makes an existing owner produce their factor before joining", async () => {
-    // The invitee already owns a business, so 2FA is mandatory for the
-    // account. Holding an emailed invitation proves the address, not the
-    // factor — accepting must not hand back a session.
+  it("lets an existing owner join another business, then choose where to land", async () => {
     const home = await track(createTenantWithOwnerAndPassword("Psi Co"));
     const other = await track(createTenantWithOwner("Omega Co"));
 
@@ -463,18 +480,17 @@ describe("an invitation is not a way past the second factor", () => {
     });
 
     expect(accepted.status).toBe(201);
-    expect(accepted.body.data.status).not.toBe("success");
+    expect(accepted.body.data.status).toBe("select_business");
     expect(accepted.body.data.accessToken).toBeUndefined();
-    expect(accepted.body.data.mfaToken).toBeTruthy();
+    expect(accepted.body.data.selectionToken).toBeTruthy();
 
-    // The membership is still created — the join happened, the session didn't.
     const memberships = await prisma.membership.count({
       where: { user: { email: home.user.email } },
     });
     expect(memberships).toBe(2);
   });
 
-  it("walks someone invited as an owner through setting one up", async () => {
+  it("signs a newly invited owner straight in", async () => {
     const { token } = await track(createTenantWithOwner("Alpha Prime Co"));
     const email = `fresh-owner-${Date.now()}@example.test`;
 
@@ -489,35 +505,8 @@ describe("an invitation is not a way past the second factor", () => {
     });
 
     expect(accepted.status).toBe(201);
-    expect(accepted.body.data.status).not.toBe("success");
-    expect(accepted.body.data.mfaToken).toBeTruthy();
-  });
-
-  it("won't let someone who owns a business elsewhere turn 2FA off here", async () => {
-    const owned = await track(createTenantWithOwner("Beta Prime Co"));
-    const here = await track(createTenantWithOwner("Gamma Prime Co"));
-
-    // Cashier in this business, owner in another: the session's role says
-    // CASHIER, but the account still owns something.
-    await prisma.membership.create({
-      data: {
-        userId: owned.user.id,
-        tenantId: here.tenant.id,
-        role: Role.CASHIER,
-      },
-    });
-    const cashierHere = tokenFor({
-      id: owned.user.id,
-      tenantId: here.tenant.id,
-      role: Role.CASHIER,
-    });
-
-    const res = await request(app)
-      .post("/api/auth/2fa/disable")
-      .set("Authorization", `Bearer ${cashierHere}`)
-      .send({ password: TEST_PASSWORD });
-
-    expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/own a business/i);
+    expect(accepted.body.data.status).toBe("success");
+    expect(accepted.body.data.accessToken).toBeTruthy();
+    expect(accepted.body.data.user.role).toBe(Role.OWNER);
   });
 });

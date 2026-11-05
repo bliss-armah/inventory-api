@@ -8,7 +8,7 @@ import {
   verifyPasswordTimingSafeNoop,
 } from "../../lib/password.ts";
 import { generateOpaqueToken, hashOpaqueToken } from "../../lib/tokens.ts";
-import { classifyIdentifier, type Identifier } from "../../lib/identifier.ts";
+import { classifyIdentifier } from "../../lib/identifier.ts";
 import { logActivity } from "../../lib/activity-logger.ts";
 import {
   BadRequestError,
@@ -21,8 +21,7 @@ import { withUniqueConstraint } from "../../shared/prisma-errors.ts";
 import * as authRepository from "./auth.repository.ts";
 import * as membershipsRepository from "../memberships/memberships.repository.ts";
 import * as staffInvitesRepository from "../users/staff-invites.repository.ts";
-import * as twoFactorAuthService from "../two-factor-auth/two-factor-auth.service.ts";
-import * as twoFactorAuthRepository from "../two-factor-auth/two-factor-auth.repository.ts";
+import * as pendingLoginRepository from "./pending-login.repository.ts";
 import type {
   AcceptInviteInput,
   ForgotPasswordInput,
@@ -102,11 +101,7 @@ export async function issueSession(
 }
 
 /**
- * The tail end of every successful login, whether that took one step (no
- * 2FA needed, one business) or three (password, then a code, then a business).
- * Only called once 2FA — if required — has actually been satisfied, so
- * `lastLoginAt` and the LOGIN activity entry never record an attempt that
- * stalled out mid-OTP.
+ * The tail end of every successful login.
  */
 export async function completeLogin(
   user: Identity,
@@ -145,71 +140,35 @@ type SignInableMembership = {
 /**
  * The last fork of every login path. With one business there is nothing to ask
  * and the session is issued outright; with several, a fresh short-lived token
- * carries the holder to /auth/select-business. It is minted here rather than
- * reusing whatever pending token got us this far so the credential rotates at
- * every step of the flow.
- *
- * `consumePendingId` is the pending-login row the caller arrived on, if any —
- * always spent, whichever branch is taken.
+ * carries the holder to /auth/select-business.
  */
 async function finishLogin(
   user: Identity,
   memberships: SignInableMembership[],
-  options: {
-    ipAddress?: string;
-    viaRememberedDevice?: boolean;
-    consumePendingId?: string;
-  } = {},
+  options: { ipAddress?: string } = {},
 ): Promise<LoginOutcome> {
-  if (options.consumePendingId) {
-    await twoFactorAuthRepository.deletePendingLogin(options.consumePendingId);
-  }
-
   const only = memberships[0];
   if (memberships.length === 1 && only) {
     return {
       status: "success",
-      viaRememberedDevice: options.viaRememberedDevice ?? false,
       ...(await completeLogin(user, only, options.ipAddress)),
     };
   }
 
-  const mfaToken = generateOpaqueToken();
-  await twoFactorAuthRepository.createPendingLogin({
+  const selectionToken = generateOpaqueToken();
+  await pendingLoginRepository.createPendingLogin({
     userId: user.id,
-    tokenHash: hashOpaqueToken(mfaToken),
+    tokenHash: hashOpaqueToken(selectionToken),
     expiresAt: new Date(
-      Date.now() + ms(env.PENDING_TWO_FACTOR_AUTH_TTL as ms.StringValue),
+      Date.now() + ms(env.BUSINESS_SELECTION_TTL as ms.StringValue),
     ),
-    // Reaching here means every factor this account needs is already
-    // satisfied; all that's left is choosing where to land.
-    twoFactorAt: new Date(),
   });
 
   return {
     status: "select_business",
-    mfaToken,
+    selectionToken,
     businesses: memberships.map(toBusinessOption),
   };
-}
-
-/**
- * The second-factor gate every credential-proving path has to clear before a
- * session exists — password login and invitation acceptance alike. Factored
- * out because accepting an invitation is a login: holding an emailed token is
- * not a substitute for the factor the account actually requires, and a person
- * invited as an OWNER needs to be walked through setting one up rather than
- * handed a session that skips it.
- */
-async function gateOnTwoFactor(
-  user: Identity & twoFactorAuthService.TwoFactorUser,
-  memberships: SignInableMembership[],
-  via?: Identifier | null,
-): Promise<LoginOutcome | null> {
-  if (!twoFactorAuthService.requiresTwoFactor(user, memberships)) {
-    return null;
-  }
-  return twoFactorAuthService.beginTwoFactorFlow(user, via);
 }
 
 /**
@@ -231,7 +190,10 @@ async function resolveSignInableMemberships(userId: string) {
   return signInable;
 }
 
-export async function register(input: RegisterInput): Promise<LoginOutcome> {
+export async function register(
+  input: RegisterInput,
+  ipAddress?: string,
+): Promise<LoginOutcome> {
   const existing = await authRepository.findUserByEmail(input.email);
   if (existing) {
     // Public registration deliberately refuses to attach a second business to
@@ -261,27 +223,22 @@ export async function register(input: RegisterInput): Promise<LoginOutcome> {
     description: `${owner.name} registered ${tenant.businessName}`,
   });
 
-  // Registration is an email-identified act, so the first login code goes to
-  // the address that was just used to register. The owner membership created
-  // alongside the tenant always requires 2FA, so this never short-circuits
-  // straight to a session.
-  return twoFactorAuthService.beginTwoFactorFlow(
-    {
-      id: owner.id,
-      email: owner.email,
-      phone: owner.phone,
-      twoFactorEnabled: false,
-      twoFactorConfirmedAt: null,
-      twoFactorChannel: null,
-    },
-    { kind: "email", email: owner.email },
+  return finishLogin(
+    owner,
+    [
+      {
+        tenantId: tenant.id,
+        role: Role.OWNER,
+        tenant: { businessName: tenant.businessName },
+      },
+    ],
+    { ipAddress },
   );
 }
 
 export async function login(
   input: LoginInput,
   ipAddress?: string,
-  rememberDeviceToken?: string,
 ): Promise<LoginOutcome> {
   const identifier = classifyIdentifier(input.identifier);
   const user = identifier
@@ -307,52 +264,13 @@ export async function login(
   // password attempt should be able to confirm.
   const memberships = await resolveSignInableMemberships(user.id);
 
-  let viaRememberedDevice = false;
-  if (twoFactorAuthService.requiresTwoFactor(user, memberships)) {
-    const rememberedDevice = rememberDeviceToken
-      ? await twoFactorAuthService.findValidRememberedDevice(
-          user.id,
-          rememberDeviceToken,
-        )
-      : null;
-
-    if (!rememberedDevice) {
-      const gated = await gateOnTwoFactor(user, memberships, identifier);
-      if (gated) return gated;
-    } else {
-      await twoFactorAuthService.slideRememberedDevice(rememberedDevice.id);
-      viaRememberedDevice = true;
-    }
-  }
-
-  return finishLogin(user, memberships, { ipAddress, viaRememberedDevice });
+  return finishLogin(user, memberships, { ipAddress });
 }
 
 /**
- * Called once the second factor is satisfied, to pick up where login() left
- * off. Memberships are re-read rather than carried across the OTP round-trip:
- * an owner could have deactivated this person while the code was in transit.
- */
-export async function completeAfterTwoFactor(
-  userId: string,
-  pendingLoginId: string,
-  ipAddress?: string,
-): Promise<LoginOutcome> {
-  const user = await authRepository.findUserById(userId);
-  if (!user) {
-    throw new UnauthorizedError();
-  }
-  const memberships = await resolveSignInableMemberships(user.id);
-  return finishLogin(user, memberships, {
-    ipAddress,
-    consumePendingId: pendingLoginId,
-  });
-}
-
-/**
- * The final step for someone who works in more than one business. The pending
- * token proves password *and* second factor; this only has to check that the
- * chosen business is genuinely one of theirs and still signable-into.
+ * The final step for someone who works in more than one business. This only
+ * has to check that the chosen business is genuinely one of theirs and still
+ * signable-into.
  */
 export async function selectBusiness(
   userId: string,
@@ -376,7 +294,7 @@ export async function selectBusiness(
     throw new ForbiddenError(SUSPENDED_MESSAGE);
   }
 
-  await twoFactorAuthRepository.deletePendingLogin(pendingLoginId);
+  await pendingLoginRepository.deletePendingLogin(pendingLoginId);
   return completeLogin(user, membership, ipAddress);
 }
 
@@ -489,13 +407,7 @@ export async function acceptInvite(
       description: `${existing.name} joined as ${invite.role}`,
     });
     const memberships = await resolveSignInableMemberships(existing.id);
-    // An invitation proves the address, not the account's second factor. If
-    // this identity needs one, it still has to produce it.
-    const gated = await gateOnTwoFactor(existing, memberships, {
-      kind: "email",
-      email: existing.email,
-    });
-    return gated ?? finishLogin(existing, memberships, { ipAddress });
+    return finishLogin(existing, memberships, { ipAddress });
   }
 
   const passwordHash = await hashPassword(input.password);
@@ -519,13 +431,7 @@ export async function acceptInvite(
   });
 
   const memberships = await resolveSignInableMemberships(user.id);
-  // Someone invited as an OWNER must set up a second factor before they get a
-  // session, exactly as a self-registered owner does.
-  const gated = await gateOnTwoFactor(user, memberships, {
-    kind: "email",
-    email: user.email,
-  });
-  return gated ?? finishLogin(user, memberships, { ipAddress });
+  return finishLogin(user, memberships, { ipAddress });
 }
 
 // ---------------------------------------------------------------------------

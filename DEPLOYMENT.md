@@ -65,10 +65,11 @@ harmless in development into hard requirements:
   **private**: the API stores only the object key and hands clients a presigned
   URL that expires after an hour, the same arrangement tuabi uses. Do not enable
   public access or bind a domain to it.
-- **Email OTP** — `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`. Unset, sending a code
-  throws, which means **nobody can log in**, not merely that mail is skipped.
-- **SMS OTP** — `VYNFY_API_KEY`, `VYNFY_SENDER_ID`, same consequence for the SMS
-  channel.
+- **Email** — `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`. Signing in needs only a
+  password, but new owners set their first password from an emailed link and
+  everyone resets a forgotten one the same way. Unset, creating a business
+  fails when it tries to send the owner's invitation and reset emails are not
+  delivered.
 
 Cookies also go `secure` in production, so the domain has to be HTTPS. The
 refresh cookie is `sameSite: lax`, which means the frontend must be on the same

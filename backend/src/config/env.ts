@@ -51,17 +51,9 @@ const envSchema = z.object({
   PLATFORM_JWT_ACCESS_SECRET: z.string().min(16),
   PLATFORM_ACCESS_TOKEN_TTL: z.string().default("15m"),
   PLATFORM_REFRESH_TOKEN_TTL: z.string().default("7d"),
-  // Two-factor code delivery — Brevo for email, Vynfy for SMS. All optional:
-  // when a channel's credentials are unset, lib/email.ts / lib/sms.ts fall
-  // back to logging the code to the console outside production (and refuse to
-  // silently "succeed" in production without a real provider configured).
   BREVO_API_KEY: blank(z.string().optional()),
   BREVO_SENDER_EMAIL: blank(z.email().optional()),
   BREVO_SENDER_NAME: blank(z.string().default("Inventory Manager")),
-  VYNFY_API_KEY: blank(z.string().optional()),
-  VYNFY_SENDER_ID: blank(z.string().optional()),
-  VYNFY_BASE_URL: blank(z.string().default("https://sms.vynfy.com")),
-  VYNFY_SEND_PATH: blank(z.string().default("/api/v1/send")),
   // Cloudflare R2, addressed with the S3 API. The bucket is private: reads go
   // through a presigned URL, so no public hostname is configured. All optional:
   // when unset, lib/image-store.ts writes to local disk outside production and
@@ -72,9 +64,7 @@ const envSchema = z.object({
   R2_ACCESS_KEY_ID: blank(z.string().optional()),
   R2_SECRET_ACCESS_KEY: blank(z.string().optional()),
   R2_BUCKET: blank(z.string().optional()),
-  OTP_CODE_TTL: z.string().default("10m"),
-  PENDING_TWO_FACTOR_AUTH_TTL: z.string().default("10m"),
-  REMEMBERED_DEVICE_TTL: z.string().default("30d"),
+  BUSINESS_SELECTION_TTL: z.string().default("10m"),
   // Long by comparison with the other opaque tokens because the recipient is a
   // person who has to find the email, not a client mid-handshake.
   STAFF_INVITE_TTL: z.string().default("7d"),
