@@ -21,12 +21,19 @@ function generateOrderNumber() {
 }
 
 function mergeLines(items: CreateOrderInput["items"]) {
-  const quantities = new Map<string, number>();
+  const merged = new Map<string, { quantity: number; unitPrice?: string }>();
   for (const item of items) {
-    quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+    const current = merged.get(item.productId);
+    if (current && current.unitPrice !== item.unitPrice) {
+      throw new BadRequestError("The same product is listed twice at different prices");
+    }
+    merged.set(item.productId, {
+      quantity: (current?.quantity ?? 0) + item.quantity,
+      unitPrice: item.unitPrice,
+    });
   }
-  return [...quantities.entries()]
-    .map(([productId, quantity]) => ({ productId, quantity }))
+  return [...merged.entries()]
+    .map(([productId, line]) => ({ productId, ...line }))
     .sort((a, b) => a.productId.localeCompare(b.productId));
 }
 
@@ -70,22 +77,26 @@ export async function create(tenantId: string, userId: string, input: CreateOrde
     if (!product) {
       throw new BadRequestError("One of the products on this order is no longer available");
     }
+    const unitPrice = line.unitPrice ? new Prisma.Decimal(line.unitPrice) : product.sellingPrice;
     return {
-      ...line,
+      productId: line.productId,
+      quantity: line.quantity,
       name: product.name,
-      unitPrice: product.sellingPrice,
-      lineTotal: product.sellingPrice.times(line.quantity),
+      unitPrice,
+      lineTotal: unitPrice.times(line.quantity),
     };
   });
   const total = priced.reduce((sum, line) => sum.plus(line.lineTotal), new Prisma.Decimal(0));
 
-  for (let attempt = 0; attempt < ORDER_NUMBER_ATTEMPTS; attempt += 1) {
+  const attempts = input.orderNumber ? 1 : ORDER_NUMBER_ATTEMPTS;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const orderId = await prisma.$transaction(async (tx) => {
         const order = await ordersRepository.createOrder(tx, {
           id: input.id,
           tenantId,
-          orderNumber: generateOrderNumber(),
+          orderNumber: input.orderNumber ?? generateOrderNumber(),
           locationId,
           createdById: userId,
           customerId: input.customerId ?? null,
@@ -151,6 +162,9 @@ export async function create(tenantId: string, userId: string, input: CreateOrde
     }
   }
 
+  if (input.orderNumber) {
+    throw new ConflictError(`Order number ${input.orderNumber} is already in use`);
+  }
   throw new ConflictError("Could not allocate an order number, please try again");
 }
 

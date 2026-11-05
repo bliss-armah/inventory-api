@@ -437,6 +437,79 @@ describe("orders", { retry: 0 }, () => {
     expect(res.status).toBe(404);
   });
 
+  it("honours an order number and prices chosen offline, so a printed slip stays valid", async () => {
+    const product = await stockedProduct(10);
+    const orderNumber = `ORD-${String(Math.floor(Math.random() * 900000) + 100000)}`;
+
+    const res = await request(app)
+      .post("/api/orders")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        id: randomUUID(),
+        orderNumber,
+        locationId: location.id,
+        items: [{ productId: product.id, quantity: 3, unitPrice: "17.50" }],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.orderNumber).toBe(orderNumber);
+    expect(Number(res.body.data.items[0].unitPrice)).toBe(17.5);
+    expect(Number(res.body.data.total)).toBe(52.5);
+    expect((await inventoryOf(product.id)).reservedQuantity).toBe(3);
+  });
+
+  it("returns 409 when a chosen order number is already taken and reserves nothing", async () => {
+    const product = await stockedProduct(10);
+    const first = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);
+
+    const clash = await request(app)
+      .post("/api/orders")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({
+        id: randomUUID(),
+        orderNumber: first.body.data.orderNumber,
+        locationId: location.id,
+        items: [{ productId: product.id, quantity: 2 }],
+      });
+
+    expect(clash.status).toBe(409);
+    expect((await inventoryOf(product.id)).reservedQuantity).toBe(1);
+  });
+
+  it("rejects a malformed order number or price", async () => {
+    const product = await stockedProduct(10);
+    const base = { id: randomUUID(), locationId: location.id };
+
+    const badNumber = await request(app)
+      .post("/api/orders")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ ...base, orderNumber: "ORD-ABC", items: [{ productId: product.id, quantity: 1 }] });
+    const badPrice = await request(app)
+      .post("/api/orders")
+      .set("Authorization", `Bearer ${cashierToken}`)
+      .send({ ...base, id: randomUUID(), items: [{ productId: product.id, quantity: 1, unitPrice: "-3" }] });
+
+    expect(badNumber.status).toBe(400);
+    expect(badPrice.status).toBe(400);
+  });
+
+  it("replays an offline order idempotently on its id", async () => {
+    const product = await stockedProduct(10);
+    const body = {
+      id: randomUUID(),
+      orderNumber: "ORD-424242",
+      locationId: location.id,
+      items: [{ productId: product.id, quantity: 2, unitPrice: "20.00" }],
+    };
+
+    const first = await request(app).post("/api/orders").set("Authorization", `Bearer ${cashierToken}`).send(body);
+    const replay = await request(app).post("/api/orders").set("Authorization", `Bearer ${cashierToken}`).send(body);
+
+    expect(first.status).toBe(201);
+    expect(replay.status).toBe(200);
+    expect((await inventoryOf(product.id)).reservedQuantity).toBe(2);
+  });
+
   it("lists open slips filtered by status", async () => {
     const product = await stockedProduct(10);
     const created = await createOrder(cashierToken, [{ productId: product.id, quantity: 1 }]);
