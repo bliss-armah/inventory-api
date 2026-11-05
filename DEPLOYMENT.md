@@ -82,14 +82,18 @@ session dies at the first token refresh.
 Migrations run automatically (the image's `CMD` is `prisma migrate deploy`
 before the server starts), but seeding does not, and
 `ALLOW_PUBLIC_REGISTRATION` is `false`, so a fresh database has no accounts.
-Set `SEED_PLATFORM_ADMIN_EMAIL` and `SEED_PLATFORM_ADMIN_PASSWORD` in the
-Environment tab, redeploy, then run once from Dokploy's terminal:
+Set `SEED_PLATFORM_ADMIN_EMAIL` and `SEED_PLATFORM_ADMIN_PASSWORD` (and,
+if the admin should also sign in with a phone number, `SEED_PLATFORM_ADMIN_PHONE`)
+in the Environment tab, redeploy, then run once from Dokploy's terminal:
 
 ```sh
 docker compose exec backend npm run db:seed
 ```
 
-Sign in as that admin and create businesses from `/platform/dashboard`. Never
+Sign in as that admin, with the email or the phone number, and create
+businesses from `/platform/dashboard`. If the admin already exists without a
+phone number, setting `SEED_PLATFORM_ADMIN_PHONE` and running the seed again
+adds it without touching the password. Never
 run `db:seed:demo` against a real deployment.
 
 ## Passwords
@@ -105,7 +109,7 @@ changed by someone with authority over the account, who then tells the person:
 - **The platform admin** — from the server terminal, in the backend service:
 
 ```sh
-ADMIN_EMAIL=you@example.com NEW_PASSWORD='a-long-new-password' npm run admin:set-password
+ADMIN_LOGIN=you@example.com NEW_PASSWORD='a-long-new-password' npm run admin:set-password
 ```
 
 Each change signs the person out everywhere, and the new password is shown once

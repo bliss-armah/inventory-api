@@ -1,7 +1,21 @@
 import { prisma } from "../../lib/prisma";
+import type { Identifier } from "../../lib/identifier";
 
 export function findByEmail(email: string) {
   return prisma.platformAdmin.findUnique({ where: { email } });
+}
+
+export function findByIdentifier(identifier: Identifier) {
+  return prisma.platformAdmin.findUnique({
+    where:
+      identifier.kind === "email"
+        ? { email: identifier.email }
+        : { phone: identifier.phone },
+  });
+}
+
+export function updatePhone(id: string, phone: string) {
+  return prisma.platformAdmin.update({ where: { id }, data: { phone } });
 }
 
 export function findById(id: string) {
@@ -38,7 +52,12 @@ export function revokeAllRefreshTokensForAdmin(platformAdminId: string) {
   });
 }
 
-export function create(input: { name: string; email: string; passwordHash: string }) {
+export function create(input: {
+  name: string;
+  email: string;
+  phone?: string;
+  passwordHash: string;
+}) {
   return prisma.platformAdmin.create({ data: input });
 }
 
@@ -48,6 +67,7 @@ export function list() {
       id: true,
       name: true,
       email: true,
+      phone: true,
       isActive: true,
       lastLoginAt: true,
       createdAt: true,

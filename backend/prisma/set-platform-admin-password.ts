@@ -1,31 +1,32 @@
 import "../src/config/env.ts";
 import { prisma } from "../src/lib/prisma.ts";
 import { hashPassword } from "../src/lib/password.ts";
+import { classifyIdentifier } from "../src/lib/identifier.ts";
 import * as platformAuthRepository from "../src/modules/platform-auth/platform-auth.repository.ts";
 
 const MIN_LENGTH = 8;
 const MAX_LENGTH = 72;
 
 async function main() {
-  const email = (
+  const login = (
+    process.env.ADMIN_LOGIN ||
     process.env.ADMIN_EMAIL ||
     process.env.SEED_PLATFORM_ADMIN_EMAIL ||
     ""
-  )
-    .trim()
-    .toLowerCase();
+  ).trim();
   const password = process.env.NEW_PASSWORD ?? "";
 
-  if (!email) {
-    throw new Error("Set ADMIN_EMAIL (or SEED_PLATFORM_ADMIN_EMAIL) to the platform admin's email");
+  const identifier = classifyIdentifier(login);
+  if (!identifier) {
+    throw new Error("Set ADMIN_LOGIN to the platform admin's email address or phone number");
   }
   if (password.length < MIN_LENGTH || password.length > MAX_LENGTH) {
     throw new Error(`Set NEW_PASSWORD to a password of ${MIN_LENGTH}-${MAX_LENGTH} characters`);
   }
 
-  const admin = await platformAuthRepository.findByEmail(email);
+  const admin = await platformAuthRepository.findByIdentifier(identifier);
   if (!admin) {
-    throw new Error(`No platform admin with the email ${email}`);
+    throw new Error(`No platform admin with the login ${login}`);
   }
 
   await platformAuthRepository.updatePassword(admin.id, await hashPassword(password));

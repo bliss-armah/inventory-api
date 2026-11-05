@@ -4,8 +4,10 @@ import { signPlatformAccessToken } from "../../lib/jwt";
 import { hashPassword, verifyPassword, verifyPasswordTimingSafeNoop } from "../../lib/password";
 import { randomUUID } from "node:crypto";
 import { generateOpaqueToken, hashOpaqueToken } from "../../lib/tokens";
+import { classifyIdentifier } from "../../lib/identifier";
+import { normalizePhone } from "../../lib/phone";
 import { BadRequestError, ConflictError, UnauthorizedError } from "../../shared/errors";
-import { withUniqueConstraint } from "../../shared/prisma-errors";
+import { withUniqueConstraints } from "../../shared/prisma-errors";
 import { sendEmail } from "../../lib/email";
 import * as platformAuthRepository from "./platform-auth.repository";
 import type {
@@ -18,6 +20,7 @@ export type PlatformAdminSummary = {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
 };
 
 export type PlatformAuthResult = {
@@ -26,14 +29,20 @@ export type PlatformAuthResult = {
   refreshToken: string;
 };
 
-function toSummary(admin: { id: string; name: string; email: string }): PlatformAdminSummary {
-  return { id: admin.id, name: admin.name, email: admin.email };
+function toSummary(admin: {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+}): PlatformAdminSummary {
+  return { id: admin.id, name: admin.name, email: admin.email, phone: admin.phone };
 }
 
 async function issueSession(admin: {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
 }): Promise<PlatformAuthResult> {
   const accessToken = signPlatformAccessToken({ sub: admin.id });
 
@@ -48,15 +57,16 @@ async function issueSession(admin: {
 }
 
 export async function login(input: PlatformLoginInput): Promise<PlatformAuthResult> {
-  const admin = await platformAuthRepository.findByEmail(input.email);
+  const identifier = classifyIdentifier(input.identifier);
+  const admin = identifier ? await platformAuthRepository.findByIdentifier(identifier) : null;
   if (!admin || !admin.isActive) {
     await verifyPasswordTimingSafeNoop(input.password);
-    throw new UnauthorizedError("Invalid email or password");
+    throw new UnauthorizedError("Invalid credentials");
   }
 
   const validPassword = await verifyPassword(input.password, admin.passwordHash);
   if (!validPassword) {
-    throw new UnauthorizedError("Invalid email or password");
+    throw new UnauthorizedError("Invalid credentials");
   }
 
   await platformAuthRepository.updateLastLogin(admin.id);
@@ -148,14 +158,18 @@ export async function createAdmin(input: CreatePlatformAdminInput) {
   }
 
   const unusablePasswordHash = await hashPassword(randomUUID());
-  const admin = await withUniqueConstraint(
+  const admin = await withUniqueConstraints(
     () =>
       platformAuthRepository.create({
         name: input.name,
         email: input.email,
+        ...(input.phone ? { phone: normalizePhone(input.phone) } : {}),
         passwordHash: unusablePasswordHash,
       }),
-    { field: "email", message: "A platform admin with this email already exists" },
+    [
+      { field: "email", match: "email", message: "A platform admin with this email already exists" },
+      { field: "phone", match: "phone", message: "A platform admin with this phone number already exists" },
+    ],
   );
 
   const token = await issueResetToken(admin.id, env.OWNER_INVITE_TTL);
