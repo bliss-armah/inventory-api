@@ -6,7 +6,16 @@ import { assertOwned } from "../../shared/ownership.ts";
 import { paginate } from "../../shared/pagination.ts";
 import { PERMISSIONS, roleAllowed } from "../../shared/permissions.ts";
 import { recordMovement } from "../stock-movements/stock-movements.service.ts";
-import { assertOpenShift, assertShiftStillOpen } from "../shifts/shifts.service.ts";
+import {
+  assertSaleMatchesOrder,
+  loadPayableOrder,
+  settleOrder,
+} from "../orders/orders.service.ts";
+import {
+  assertOpenShift,
+  assertShiftStillOpen,
+  resolveLocationId,
+} from "../shifts/shifts.service.ts";
 import { computeSaleTotals, assertWithinDiscountCap } from "./sales.money.ts";
 import * as salesRepository from "./sales.repository.ts";
 import { salesListQuerySchema } from "./sales.validators.ts";
@@ -61,6 +70,9 @@ export async function create(
   }
 
   const shift = await assertOpenShift(tenantId, userId, input.shiftId);
+  const order = input.orderId
+    ? await loadPayableOrder(tenantId, input.orderId, shift.locationId)
+    : null;
 
   await assertOwned(tenantId, {
     productIds: input.items.map((item) => item.productId),
@@ -88,6 +100,10 @@ export async function create(
     unitPrice: new Prisma.Decimal(item.unitPrice),
     discountAmount: new Prisma.Decimal(item.discountAmount),
   }));
+
+  if (order) {
+    assertSaleMatchesOrder(order, items);
+  }
 
   const totals = computeSaleTotals({
     items,
@@ -159,6 +175,16 @@ export async function create(
         }),
       );
 
+      if (order) {
+        await settleOrder(tx, {
+          tenantId,
+          userId,
+          saleId: sale.id,
+          saleNumber: sale.saleNumber,
+          order,
+        });
+      }
+
       for (const item of items) {
         await recordMovement(tx, {
           tenantId,
@@ -226,7 +252,7 @@ export function list(tenantId: string, userId: string, role: Role, rawQuery: unk
   );
 }
 
-export async function catalog(tenantId: string, locationId: string) {
-  await assertOwned(tenantId, { locationIds: [locationId] });
+export async function catalog(tenantId: string, requestedLocationId?: string) {
+  const locationId = await resolveLocationId(tenantId, requestedLocationId);
   return salesRepository.catalog(tenantId, locationId);
 }

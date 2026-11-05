@@ -4,6 +4,7 @@ import { prisma } from "./lib/prisma";
 import { startScheduler } from "./lib/scheduler";
 import { runLowStockDigestForAllTenants } from "./modules/alerts/alerts.jobs";
 import { imageStorageBackend } from "./lib/image-store";
+import { expireStaleOrders } from "./modules/orders/orders.service";
 
 const server = app.listen(env.PORT, () => {
   console.log(`API listening on port ${env.PORT} (${env.NODE_ENV})`);
@@ -11,6 +12,7 @@ const server = app.listen(env.PORT, () => {
 });
 
 const LOW_STOCK_CHECK_MS = 60 * 60 * 1000;
+const ORDER_EXPIRY_CHECK_MS = 15 * 60 * 1000;
 
 const scheduler = startScheduler([
   {
@@ -18,6 +20,13 @@ const scheduler = startScheduler([
     everyMs: LOW_STOCK_CHECK_MS,
     run: async () => {
       await runLowStockDigestForAllTenants();
+    },
+  },
+  {
+    name: "order-expiry",
+    everyMs: ORDER_EXPIRY_CHECK_MS,
+    run: async () => {
+      await expireStaleOrders(env.ORDER_HOLD_HOURS);
     },
   },
 ]);

@@ -183,6 +183,8 @@ export function createProduct(tenantId: string, minimumStock = 0) {
  * then delete the tenant for everything else to cascade normally.
  */
 export async function deleteTenant(tenantId: string) {
+  await prisma.orderItem.deleteMany({ where: { tenantId } });
+  await prisma.order.deleteMany({ where: { tenantId } });
   await prisma.saleReturnItem.deleteMany({ where: { tenantId } });
   await prisma.saleReturn.deleteMany({ where: { tenantId } });
   await prisma.saleItem.deleteMany({ where: { tenantId } });

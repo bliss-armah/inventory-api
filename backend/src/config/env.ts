@@ -44,6 +44,7 @@ const envSchema = z.object({
   // but it has to survive an onboarding conversation and an unread inbox, not
   // a five-minute "I forgot my password" round trip.
   OWNER_INVITE_TTL: z.string().default("7d"),
+  ORDER_HOLD_HOURS: z.coerce.number().positive().default(24),
   COOKIE_SECRET: z.string().min(16),
   // Deliberately a separate secret from JWT_ACCESS_SECRET: a platform-admin
   // token must never be verifiable by tenant auth middleware, or vice versa.

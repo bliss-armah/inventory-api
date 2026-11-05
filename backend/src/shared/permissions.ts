@@ -94,6 +94,9 @@ export const PERMISSIONS = {
     return: [Role.OWNER, Role.CASHIER],
     viewAll: [Role.OWNER],
   },
+  orders: {
+    operate: [Role.OWNER, Role.CASHIER],
+  },
   shifts: {
     operate: [Role.OWNER, Role.CASHIER],
     forceClose: [Role.OWNER],

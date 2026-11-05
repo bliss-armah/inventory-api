@@ -11,6 +11,7 @@ export const createSaleSchema = z.object({
   saleNumber: z.string().trim().min(3).max(32),
   shiftId: z.string().trim().min(1),
   customerId: z.string().trim().min(1).optional(),
+  orderId: z.uuid().optional(),
   soldAt: z.coerce.date(),
   paymentMethod: z.enum(PaymentMethod),
   amountTendered: money,
@@ -30,7 +31,7 @@ export const createSaleSchema = z.object({
 });
 
 export const catalogQuerySchema = z.object({
-  locationId: z.string().trim().min(1),
+  locationId: z.string().trim().min(1).optional(),
 });
 
 export const salesListQuerySchema = z.object({

@@ -68,6 +68,13 @@ enum MovementType {
   EXPIRED
 }
 
+enum OrderStatus {
+  OPEN
+  PAID
+  CANCELLED
+  EXPIRED
+}
+
 enum PurchaseOrderStatus {
   DRAFT
   SUBMITTED
@@ -135,46 +142,48 @@ model Tenant {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  memberships           Membership[]
-  staffInvites          StaffInvite[]
-  settings              BusinessSettings?
-  locations             Location[]
-  categories            Category[]
-  brands                Brand[]
-  suppliers             Supplier[]
-  products              Product[]
-  inventory             Inventory[]
-  stockMovements        StockMovement[]
-  purchaseOrders        PurchaseOrder[]
-  goodsReceipts         GoodsReceipt[]
-  stockAdjustments      StockAdjustment[]
-  stockTransfers        StockTransfer[]
-  stockCounts           StockCount[]
-  activityLogs          ActivityLog[]
-  refreshTokens         RefreshToken[]
-  priceHistory          ProductPriceHistory[]
-  customers             Customer[]
-  lowStockAlerts        LowStockAlert[]
-  shifts                Shift[]
-  sales                 Sale[]
-  saleItems             SaleItem[]
-  saleReturns           SaleReturn[]
-  saleReturnItems       SaleReturnItem[]
+  memberships      Membership[]
+  staffInvites     StaffInvite[]
+  settings         BusinessSettings?
+  locations        Location[]
+  categories       Category[]
+  brands           Brand[]
+  suppliers        Supplier[]
+  products         Product[]
+  inventory        Inventory[]
+  stockMovements   StockMovement[]
+  purchaseOrders   PurchaseOrder[]
+  goodsReceipts    GoodsReceipt[]
+  stockAdjustments StockAdjustment[]
+  stockTransfers   StockTransfer[]
+  stockCounts      StockCount[]
+  activityLogs     ActivityLog[]
+  refreshTokens    RefreshToken[]
+  priceHistory     ProductPriceHistory[]
+  customers        Customer[]
+  lowStockAlerts   LowStockAlert[]
+  shifts           Shift[]
+  sales            Sale[]
+  saleItems        SaleItem[]
+  saleReturns      SaleReturn[]
+  saleReturnItems  SaleReturnItem[]
+  orders           Order[]
+  orderItems       OrderItem[]
 
   @@map("tenants")
 }
 
 model BusinessSettings {
-  id                   String        @id @default(cuid())
-  tenantId             String        @unique
-  inventoryMode        InventoryMode @default(SINGLE_LOCATION)
-  enablePos            Boolean       @default(false)
-  enableBatchTracking  Boolean       @default(false)
-  enableExpiryTracking Boolean       @default(false)
-  maxDiscountPercent   Decimal       @default(0) @db.Decimal(5, 2)
-  lowStockAlertsEnabled Boolean      @default(false)
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  id                    String        @id @default(cuid())
+  tenantId              String        @unique
+  inventoryMode         InventoryMode @default(SINGLE_LOCATION)
+  enablePos             Boolean       @default(false)
+  enableBatchTracking   Boolean       @default(false)
+  enableExpiryTracking  Boolean       @default(false)
+  maxDiscountPercent    Decimal       @default(0) @db.Decimal(5, 2)
+  lowStockAlertsEnabled Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -200,7 +209,7 @@ model User {
   updatedAt            DateTime    @updatedAt
 
   memberships            Membership[]
-  sentInvites            StaffInvite[]          @relation("StaffInviteInvitedBy")
+  sentInvites            StaffInvite[]         @relation("StaffInviteInvitedBy")
   refreshTokens          RefreshToken[]
   passwordResets         PasswordResetToken[]
   pendingLogins          PendingLogin[]
@@ -210,16 +219,17 @@ model User {
   activityLogs           ActivityLog[]
   stockMovements         StockMovement[]
   stockAdjustments       StockAdjustment[]
-  createdPurchaseOrders  PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
-  approvedPurchaseOrders PurchaseOrder[]        @relation("PurchaseOrderApprovedBy")
+  createdPurchaseOrders  PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
+  approvedPurchaseOrders PurchaseOrder[]       @relation("PurchaseOrderApprovedBy")
   goodsReceipts          GoodsReceipt[]
-  requestedTransfers     StockTransfer[]        @relation("StockTransferRequestedBy")
-  approvedTransfers      StockTransfer[]        @relation("StockTransferApprovedBy")
+  requestedTransfers     StockTransfer[]       @relation("StockTransferRequestedBy")
+  approvedTransfers      StockTransfer[]       @relation("StockTransferApprovedBy")
   stockCounts            StockCount[]
   productPriceChanges    ProductPriceHistory[]
   shifts                 Shift[]
   sales                  Sale[]
   saleReturns            SaleReturn[]
+  orders                 Order[]
 
   @@map("users")
 }
@@ -253,15 +263,15 @@ model Membership {
 /// tenant, and an owner must never learn that an address exists in some other
 /// business.
 model StaffInvite {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   tenantId        String
   email           String
   name            String
   role            Role
-  tokenHash       String    @unique
+  tokenHash       String   @unique
   expiresAt       DateTime
   invitedByUserId String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime @default(now())
 
   tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invitedBy User?  @relation("StaffInviteInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
@@ -295,7 +305,7 @@ model PasswordResetToken {
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("password_reset_tokens")
@@ -365,7 +375,7 @@ model OtpChallenge {
   expiresAt   DateTime
   createdAt   DateTime   @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, purpose])
   @@map("otp_challenges")
@@ -383,7 +393,7 @@ model RememberedDevice {
   createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("remembered_devices")
@@ -399,7 +409,7 @@ model TwoFactorBackupCode {
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("two_factor_backup_codes")
@@ -450,6 +460,7 @@ model Location {
   sales            Sale[]
   saleReturns      SaleReturn[]
   lowStockAlerts   LowStockAlert[]
+  orders           Order[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -539,7 +550,8 @@ model Product {
   saleItems          SaleItem[]
   saleReturnItems    SaleReturnItem[]
 
-  lowStockAlerts        LowStockAlert[]
+  lowStockAlerts LowStockAlert[]
+  orderItems     OrderItem[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -885,8 +897,9 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sales  Sale[]
+  orders Order[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -944,6 +957,7 @@ model Sale {
   customer Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items    SaleItem[]
   returns  SaleReturn[]
+  order    Order?
 
   @@unique([tenantId, saleNumber])
   @@index([tenantId])
@@ -1016,4 +1030,52 @@ model SaleReturnItem {
 
   @@index([tenantId, saleReturnId])
   @@map("sale_return_items")
+}
+
+model Order {
+  id           String      @id
+  tenantId     String
+  orderNumber  String
+  locationId   String
+  createdById  String
+  customerId   String?
+  customerName String?
+  note         String?
+  total        Decimal     @db.Decimal(14, 2)
+  status       OrderStatus @default(OPEN)
+  saleId       String?     @unique
+  createdAt    DateTime    @default(now())
+  paidAt       DateTime?
+  cancelledAt  DateTime?
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location  Location    @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  customer  Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  sale      Sale?       @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  items     OrderItem[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, status, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  tenantId  String
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(14, 2)
+  lineTotal Decimal @db.Decimal(14, 2)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, orderId])
+  @@index([tenantId, productId])
+  @@map("order_items")
 }

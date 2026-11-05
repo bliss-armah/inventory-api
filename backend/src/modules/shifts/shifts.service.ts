@@ -16,7 +16,7 @@ import type { CloseShiftInput, OpenShiftInput } from "./shifts.validators.ts";
  * statement of where the till normally sits — only a genuine ambiguity (several
  * active locations, none marked default) is worth asking an owner about.
  */
-async function resolveLocationId(
+export async function resolveLocationId(
   tenantId: string,
   requested: string | undefined,
 ): Promise<string> {
