@@ -207,9 +207,7 @@ export async function updatePicking(
       }
     }
 
-    for (const [itemId, pickedQuantity] of requested) {
-      await ordersRepository.setPickedQuantity(tx, tenantId, id, itemId, pickedQuantity);
-    }
+    await ordersRepository.setPickedQuantities(tx, tenantId, id, requested);
 
     const after = await ordersRepository.findItems(tx, tenantId, id);
     const complete = after.filter((item) => item.pickedQuantity >= item.quantity).length;

@@ -78,17 +78,22 @@ export function claimOpen(
   });
 }
 
-export function setPickedQuantity(
+export async function setPickedQuantities(
   tx: PrismaTransactionClient,
   tenantId: string,
   orderId: string,
-  itemId: string,
-  pickedQuantity: number,
+  picked: Map<string, number>,
 ) {
-  return tx.orderItem.updateMany({
-    where: { id: itemId, tenantId, orderId },
-    data: { pickedQuantity },
-  });
+  const itemsByQuantity = new Map<number, string[]>();
+  for (const [itemId, pickedQuantity] of picked) {
+    itemsByQuantity.set(pickedQuantity, [...(itemsByQuantity.get(pickedQuantity) ?? []), itemId]);
+  }
+  for (const [pickedQuantity, itemIds] of itemsByQuantity) {
+    await tx.orderItem.updateMany({
+      where: { id: { in: itemIds }, tenantId, orderId },
+      data: { pickedQuantity },
+    });
+  }
 }
 
 export function findItems(tx: PrismaTransactionClient, tenantId: string, orderId: string) {

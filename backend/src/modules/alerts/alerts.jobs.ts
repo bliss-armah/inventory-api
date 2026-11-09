@@ -6,14 +6,13 @@ export async function runLowStockDigestForAllTenants(): Promise<number> {
   const enabled = await alertsRepository.findTenantsWithAlertsEnabled();
   let notified = 0;
 
-  for (const { tenantId } of enabled) {
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { businessName: true, suspendedAt: true },
-    });
-    if (!tenant || tenant.suspendedAt) continue;
+  const tenants = await prisma.tenant.findMany({
+    where: { id: { in: enabled.map(({ tenantId }) => tenantId) }, suspendedAt: null },
+    select: { id: true, businessName: true },
+  });
 
-    const result = await runLowStockDigest(tenantId, tenant.businessName);
+  for (const tenant of tenants) {
+    const result = await runLowStockDigest(tenant.id, tenant.businessName);
     notified += result.notified;
   }
 

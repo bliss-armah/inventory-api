@@ -6,6 +6,9 @@ import { env } from "../config/env.ts";
 // path this replaced was the source of intermittent "socket hang up" failures.
 // Pool size is tuned through DATABASE_URL's `connection_limit` parameter
 // rather than in code; unset, Prisma uses num_cpus * 2 + 1.
+const queryEvents =
+  env.NODE_ENV === "test" ? ([{ emit: "event", level: "query" }] as const) : ([] as const);
+
 export const prisma = new PrismaClient({
-  log: env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  log: [...(env.NODE_ENV === "development" ? (["warn", "error"] as const) : (["error"] as const)), ...queryEvents],
 });

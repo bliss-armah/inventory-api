@@ -62,6 +62,25 @@ export function findByIdInTenant(tenantId: string, id: string) {
   });
 }
 
+export function listByIdsInTenant(tenantId: string, ids: string[]) {
+  return prisma.product.findMany({
+    where: { tenantId, id: { in: ids } },
+    include: { category: true, brand: true },
+  });
+}
+
+export function listBySkusInTenant(tenantId: string, skus: string[]) {
+  return prisma.product.findMany({ where: { tenantId, sku: { in: skus } } });
+}
+
+export async function listBarcodesInTenant(tenantId: string) {
+  const rows = await prisma.product.findMany({
+    where: { tenantId, barcode: { not: null } },
+    select: { barcode: true },
+  });
+  return rows.flatMap((row) => (row.barcode ? [row.barcode] : []));
+}
+
 export function findByBarcodeInTenant(tenantId: string, barcode: string) {
   return prisma.product.findFirst({ where: { tenantId, barcode } });
 }
@@ -72,6 +91,10 @@ export function listMissingBarcode(tenantId: string) {
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
+}
+
+export function assignBarcode(tenantId: string, id: string, barcode: string) {
+  return prisma.product.updateMany({ where: { id, tenantId }, data: { barcode } });
 }
 
 export function setBarcode(tenantId: string, id: string, barcode: string) {
@@ -88,10 +111,6 @@ export function listAllForExport(tenantId: string) {
     include: { category: true, brand: true },
     orderBy: { sku: "asc" },
   });
-}
-
-export function findBySkuInTenant(tenantId: string, sku: string) {
-  return prisma.product.findFirst({ where: { tenantId, sku } });
 }
 
 export function listCategoriesForTenant(tenantId: string) {

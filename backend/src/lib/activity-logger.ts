@@ -46,3 +46,20 @@ export async function logActivity(
     console.error("Failed to write activity log entry:", error);
   }
 }
+
+export async function logActivities(inputs: LogActivityInput[]): Promise<void> {
+  if (inputs.length === 0) return;
+  try {
+    await prisma.activityLog.createMany({
+      data: inputs.map((input) => ({
+        tenantId: input.tenantId,
+        userId: input.userId ?? null,
+        action: input.action,
+        description: input.description,
+        ipAddress: input.ipAddress ?? null,
+      })),
+    });
+  } catch (error) {
+    console.error("Failed to write activity log entries:", error);
+  }
+}

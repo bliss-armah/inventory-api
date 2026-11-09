@@ -73,20 +73,22 @@ export async function updateItems(
       throw new BadRequestError("Cannot edit a completed stock count");
     }
 
+    const itemByProductId = new Map(count.items.map((row) => [row.productId, row]));
+    const updates = new Map<string, { itemId: string; physicalQuantity: number; difference: number }>();
     for (const entry of input.items) {
-      const item = count.items.find((row) => row.productId === entry.productId);
+      const item = itemByProductId.get(entry.productId);
       if (!item) {
         throw new BadRequestError(
           `Product ${entry.productId} is not part of this stock count`,
         );
       }
-      await stockCountsRepository.updateItemPhysicalQuantityTx(
-        tx,
-        item.id,
-        entry.physicalQuantity,
-        entry.physicalQuantity - item.systemQuantity,
-      );
+      updates.set(item.id, {
+        itemId: item.id,
+        physicalQuantity: entry.physicalQuantity,
+        difference: entry.physicalQuantity - item.systemQuantity,
+      });
     }
+    await stockCountsRepository.updateItemPhysicalQuantitiesTx(tx, [...updates.values()]);
 
     if (count.status === StockCountStatus.DRAFT) {
       await stockCountsRepository.updateStatusTx(

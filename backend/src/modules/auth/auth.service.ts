@@ -8,7 +8,7 @@ import {
 } from "../../lib/password.ts";
 import { generateOpaqueToken, hashOpaqueToken } from "../../lib/tokens.ts";
 import { classifyIdentifier } from "../../lib/identifier.ts";
-import { logActivity } from "../../lib/activity-logger.ts";
+import { logActivities, logActivity } from "../../lib/activity-logger.ts";
 import {
   BadRequestError,
   ConflictError,
@@ -508,12 +508,12 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   const memberships = await membershipsRepository.listActiveForUser(
     stored.userId,
   );
-  for (const membership of memberships) {
-    await logActivity({
+  await logActivities(
+    memberships.map((membership) => ({
       tenantId: membership.tenantId,
       userId: stored.userId,
       action: "PASSWORD_RESET",
       description: "Password was reset",
-    });
-  }
+    })),
+  );
 }

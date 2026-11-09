@@ -60,16 +60,23 @@ export function findByIdInTenant(tenantId: string, id: string) {
   return prisma.stockCount.findFirst({ where: { id, tenantId }, include });
 }
 
-export function updateItemPhysicalQuantityTx(
+export async function updateItemPhysicalQuantitiesTx(
   tx: PrismaTransactionClient,
-  itemId: string,
-  physicalQuantity: number,
-  difference: number,
+  entries: Array<{ itemId: string; physicalQuantity: number; difference: number }>,
 ) {
-  return tx.stockCountItem.update({
-    where: { id: itemId },
-    data: { physicalQuantity, difference },
-  });
+  if (entries.length === 0) return;
+  const rows = Prisma.join(
+    entries.map(
+      (entry) =>
+        Prisma.sql`(${entry.itemId}, ${entry.physicalQuantity}::int, ${entry.difference}::int)`,
+    ),
+  );
+  await tx.$executeRaw`
+    UPDATE "stock_count_items" AS item
+    SET "physicalQuantity" = v.physical, "difference" = v.diff
+    FROM (VALUES ${rows}) AS v(id, physical, diff)
+    WHERE item.id = v.id
+  `;
 }
 
 export function updateStatusTx(

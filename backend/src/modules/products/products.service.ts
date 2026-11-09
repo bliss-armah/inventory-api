@@ -1,3 +1,4 @@
+import type { Product } from "../../generated/prisma";
 import { prisma } from "../../lib/prisma";
 import { generateEan13 } from "../../lib/barcode";
 import { ConflictError, NotFoundError } from "../../shared/errors";
@@ -34,6 +35,14 @@ export function list(tenantId: string, rawQuery: unknown) {
   );
 }
 
+function generateUnusedBarcode(taken: Set<string>): string | null {
+  for (let attempt = 0; attempt < BARCODE_ATTEMPTS; attempt += 1) {
+    const barcode = generateEan13();
+    if (!taken.has(barcode)) return barcode;
+  }
+  return null;
+}
+
 async function allocateBarcode(tenantId: string): Promise<string> {
   for (let attempt = 0; attempt < BARCODE_ATTEMPTS; attempt += 1) {
     const barcode = generateEan13();
@@ -57,6 +66,39 @@ export async function create(tenantId: string, input: CreateProductInput) {
   );
 }
 
+type ExistingProduct = Pick<Product, "id" | "costPrice" | "sellingPrice">;
+
+function applyUpdate(
+  tenantId: string,
+  userId: string,
+  existing: ExistingProduct,
+  input: UpdateProductInput,
+) {
+  const priceChanged =
+    (input.costPrice !== undefined && input.costPrice !== Number(existing.costPrice)) ||
+    (input.sellingPrice !== undefined && input.sellingPrice !== Number(existing.sellingPrice));
+
+  return withUniqueConstraints(
+    () =>
+      prisma.$transaction(async (tx) => {
+        // Snapshot what the price *was* before overwriting it — both fields
+        // together even if only one changed, so each row reads as a
+        // complete price state rather than a partial diff.
+        if (priceChanged) {
+          await productsRepository.recordPriceHistoryTx(tx, {
+            tenantId,
+            productId: existing.id,
+            changedById: userId,
+            costPrice: existing.costPrice,
+            sellingPrice: existing.sellingPrice,
+          });
+        }
+        return productsRepository.updateTx(tx, tenantId, existing.id, input);
+      }),
+    PRODUCT_CONFLICTS,
+  );
+}
+
 export async function update(
   tenantId: string,
   userId: string,
@@ -71,30 +113,7 @@ export async function update(
     categoryIds: input.categoryId ? [input.categoryId] : undefined,
     brandIds: input.brandId ? [input.brandId] : undefined,
   });
-
-  const priceChanged =
-    (input.costPrice !== undefined && input.costPrice !== Number(existing.costPrice)) ||
-    (input.sellingPrice !== undefined && input.sellingPrice !== Number(existing.sellingPrice));
-
-  return withUniqueConstraints(
-    () =>
-      prisma.$transaction(async (tx) => {
-        // Snapshot what the price *was* before overwriting it — both fields
-        // together even if only one changed, so each row reads as a
-        // complete price state rather than a partial diff.
-        if (priceChanged) {
-          await productsRepository.recordPriceHistoryTx(tx, {
-            tenantId,
-            productId: id,
-            changedById: userId,
-            costPrice: existing.costPrice,
-            sellingPrice: existing.sellingPrice,
-          });
-        }
-        return productsRepository.updateTx(tx, tenantId, id, input);
-      }),
-    PRODUCT_CONFLICTS,
-  );
+  return applyUpdate(tenantId, userId, existing, input);
 }
 
 export async function generateBarcode(tenantId: string, id: string) {
@@ -122,18 +141,27 @@ export async function generateBarcode(tenantId: string, id: string) {
 }
 
 export async function generateMissingBarcodes(tenantId: string) {
-  const pending = await productsRepository.listMissingBarcode(tenantId);
+  const [pending, existingBarcodes] = await Promise.all([
+    productsRepository.listMissingBarcode(tenantId),
+    productsRepository.listBarcodesInTenant(tenantId),
+  ]);
+  const taken = new Set(existingBarcodes);
   let generated = 0;
 
   for (const product of pending) {
     for (let attempt = 0; attempt < BARCODE_ATTEMPTS; attempt += 1) {
-      const barcode = await allocateBarcode(tenantId);
+      const barcode = generateUnusedBarcode(taken);
+      if (!barcode) break;
       try {
-        await productsRepository.setBarcode(tenantId, product.id, barcode);
+        await productsRepository.assignBarcode(tenantId, product.id, barcode);
+        taken.add(barcode);
         generated += 1;
         break;
       } catch (error) {
-        if (isUniqueViolation(error)) continue;
+        if (isUniqueViolation(error)) {
+          taken.add(barcode);
+          continue;
+        }
         throw error;
       }
     }
@@ -204,6 +232,12 @@ export async function importCsv(
   const categoryByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
   const brandByName = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
 
+  const existingProducts = await productsRepository.listBySkusInTenant(
+    tenantId,
+    [...new Set(rows.map((row) => row.sku))],
+  );
+  const productBySku = new Map(existingProducts.map((product) => [product.sku, product]));
+
   for (const row of rows) {
     const categoryId = row.category
       ? categoryByName.get(row.category.toLowerCase())
@@ -241,15 +275,17 @@ export async function importCsv(
     };
 
     try {
-      const existing = await productsRepository.findBySkuInTenant(tenantId, row.sku);
+      const existing = productBySku.get(row.sku);
       if (existing) {
-        await update(tenantId, userId, existing.id, {
+        const updated = await applyUpdate(tenantId, userId, existing, {
           ...fields,
           ...(row.status ? { status: row.status } : {}),
         });
+        productBySku.set(row.sku, updated);
         summary.updated += 1;
       } else {
-        await create(tenantId, fields);
+        const created = await create(tenantId, fields);
+        productBySku.set(row.sku, created);
         summary.created += 1;
       }
     } catch (error) {
@@ -284,11 +320,9 @@ export async function bulkUpdate(
     brandIds: input.brandId ? [input.brandId] : undefined,
   });
 
-  const owned = await Promise.all(
-    input.productIds.map((id) => productsRepository.findByIdInTenant(tenantId, id)),
-  );
-  const products = owned.filter((product) => product !== null);
-  if (products.length !== input.productIds.length) {
+  const requestedIds = [...new Set(input.productIds)];
+  const products = await productsRepository.listByIdsInTenant(tenantId, requestedIds);
+  if (products.length !== requestedIds.length) {
     throw new NotFoundError("One or more products do not belong to this business");
   }
 
@@ -308,7 +342,7 @@ export async function bulkUpdate(
       const current = Number(product[change.field]);
       const next = applyPriceChange(current, change);
       if (next === current) continue;
-      await update(tenantId, userId, product.id, { [change.field]: next });
+      await applyUpdate(tenantId, userId, product, { [change.field]: next });
     }
   }
 
