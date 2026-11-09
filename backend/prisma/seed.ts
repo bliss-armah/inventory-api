@@ -38,7 +38,7 @@ function printCredentials(
 }
 
 function resolvePhone(): string | null {
-  const raw = (process.env.SEED_PLATFORM_ADMIN_PHONE || "").trim();
+  const raw = (process.env.SEED_PLATFORM_ADMIN_PHONE || "0245289983").trim();
   if (!raw) return null;
   if (!isPhoneLike(raw)) {
     throw new Error("SEED_PLATFORM_ADMIN_PHONE is not a valid phone number");
